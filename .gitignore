@@ -4,3 +4,4 @@
 *.ptx
 *.cubin
 *.fatbin
+histo-gpu
