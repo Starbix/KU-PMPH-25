@@ -5,3 +5,5 @@
 *.cubin
 *.fatbin
 histo-gpu
+coalesce-cpu
+coalesce-gpu
