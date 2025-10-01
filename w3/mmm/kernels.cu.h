@@ -158,8 +158,8 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
                  *   already solved Task 3.1.
                  ***************************************/
                   css[i][j] +=  
-                    Aloc[iii + threadIdx.y*Ry + i][kk + k] *
-                    Bloc[kk+k][jjj + threadIdx.x*Rx + j] ;
+                    Aloc[iii + tidy*Ry + i][kk + k] *
+                    Bloc[kk + k][jjj + tidx*Rx + j] ;
               }
           }
       }
