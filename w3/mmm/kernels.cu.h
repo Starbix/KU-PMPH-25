@@ -1,6 +1,9 @@
 #ifndef MULT_KERNELS
 #define MULT_KERNELS
 
+
+#define ARRAY(arr, x, y, width) ((arr)[(y) * (width) + (x)])
+
 // widthA = heightB
 template <class ElTp>
 __global__ void mmmNaiveKer(ElTp* A, ElTp* B, ElTp* C, int heightA, int widthB, int widthA) {
@@ -102,8 +105,8 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
        *      should expand to something like: A[ ... + threadIdx.x]
        **************************************************************/
       for (int r = 0; r < Ry; r++) {
-          Aloc[tidy][tidx] = (r < heightA && kk + tidx < widthA) ?
-                             A[r*widthA + kk + tidx] : 0.0;
+          Aloc[tidy*r][tidx] = (iii+(tidy*r)<heightA &&  kk+tidx<widthA) ?
+              ARRAY(A,iii+(tidy*r),kk+tidx, widthA) : 0.0;
       }
 
 
@@ -133,8 +136,11 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
        *      Bloc is a two-dimensional array
        *      (see definitiona at the begining of kernels).
        **************************************************************/
-      Bloc[tidy][j - jjj] = (j < widthB && kk + tidy < widthA) ?
-                            B[( kk + tidy )* widthB + j] : 0.0;
+       // TODO: NOT coalesced access to B!
+       for (int r = 0; r < Rx; r++) {
+           Bloc[tidy][tidx*r] = (kk+tidy<widthA &&  jjj + tidx*r<widthB) ?
+               ARRAY(B,kk+tidy,jjj + tidx*r, widthB) : 0.0;
+       }
 
       __syncthreads();
 
@@ -154,13 +160,16 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
                  * This assumes of course that you have
                  *   already solved Task 3.1.
                  ***************************************/
-                  if( (iii + threadIdx.y*Ry + i < heightA) &&
-                      (kk+k < widthA) &&
-                      (jjj + threadIdx.x*Rx + j < widthB)
-                    )
-                  css[i][j] +=
-                    A[ (iii + threadIdx.y*Ry + i)*widthA + (kk + k)] *
-                    B[ (kk+k)*widthB + jjj + threadIdx.x*Rx + j] ;
+                  // if( (iii + threadIdx.y*Ry + i < heightA) &&
+                  //     (kk+k < widthA) &&
+                  //     (jjj + threadIdx.x*Rx + j < widthB)
+                  //   )
+                  // css[i][j] +=
+                  //   A[ (iii + threadIdx.y*Ry + i)*widthA + (kk + k)] *
+                  //   B[ (kk+k)*widthB + jjj + threadIdx.x*Rx + j] ;
+
+                  css[i][j] += Aloc[][]*
+                      Bloc[][]
               }
           }
       }
