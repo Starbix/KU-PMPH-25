@@ -42,8 +42,13 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
   // and the global-memory array C is updated at the end.
   ElTp css[Ry][Rx];
 
+  unsigned int tidx = threadIdx.x, tidy = threadIdx.y;
+
   unsigned int iii = blockIdx.y * Ty * Ry;
   unsigned int jjj = blockIdx.x * Tx * Rx;
+  
+  unsigned int i = iii + tidy;
+  unsigned int j = jjj + tidx;
 
   // initialize the result with zero
   // (the neutral element for addition)
@@ -96,8 +101,11 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
        * 4. Coalesced access to A essentially means that indexing in A
        *      should expand to something like: A[ ... + threadIdx.x]
        **************************************************************/
-      
-       // Please implement Task 3.1.1 here
+      for (int r = 0; r < Ry; r++) {
+          Aloc[tidy][tidx] = (r < heightA && kk + tidx < widthA) ?
+                             A[r*widthA + kk + tidx] : 0.0; 
+      }
+        
 
       /***************************************
        * Subtask 3.1.2:
@@ -125,8 +133,8 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
        *      Bloc is a two-dimensional array 
        *      (see definitiona at the begining of kernels).
        **************************************************************/
-
-      // Please implement Task 3.1.2 here
+      Bloc[tidy][j - jjj] = (j < widthB && kk + tidy < widthA) ?
+                            B[( kk + tidy )* widthB + j] : 0.0;
 
       __syncthreads();
 
