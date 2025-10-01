@@ -2,7 +2,7 @@
 #define MULT_KERNELS
 
 
-#define ARRAY(arr, x, y, width) ((arr)[(y) * (width) + (x)])
+#define ARRAY(arr, row, col, width) ((arr)[(row) * (width) + (col)])
 
 // widthA = heightB
 template <class ElTp>
@@ -102,8 +102,8 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
        *      should expand to something like: A[ ... + threadIdx.x]
        **************************************************************/
       for (int r = 0; r < Ry; r++) {
-          Aloc[tidy*r][tidx] = (iii+(tidy*r)<heightA &&  kk+tidx<widthA) ?
-              ARRAY(A,iii+(tidy*r),kk+tidx, widthA) : 0.0;
+          Aloc[tidy*r][tidx] = (iii + tidy*r < heightA &&  kk + tidx < widthA) ?
+              ARRAY(A, iii + tidy*r, kk + tidx, widthA) : 0.0;
       }
 
 
@@ -135,8 +135,8 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
        **************************************************************/
        // TODO: NOT coalesced access to B!
        for (int r = 0; r < Rx; r++) {
-           Bloc[tidy][tidx*r] = (kk+tidy<widthA &&  jjj + tidx*r<widthB) ?
-               ARRAY(B,kk+tidy,jjj + tidx*r, widthB) : 0.0;
+           Bloc[tidy][tidx*r] = (kk + tidy < widthA &&  jjj + tidx*r < widthB) ?
+               ARRAY(B, kk + tidy, jjj + tidx*r, widthB) : 0.0;
        }
 
       __syncthreads();
