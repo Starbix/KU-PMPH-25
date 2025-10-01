@@ -102,8 +102,8 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
        *      should expand to something like: A[ ... + threadIdx.x]
        **************************************************************/
       for (int r = 0; r < Ry; r++) {
-          Aloc[tidy*r][tidx] = (iii + tidy*r < heightA &&  kk + tidx < widthA) ?
-              ARRAY(A, iii + tidy*r, kk + tidx, widthA) : 0.0;
+          Aloc[tidy+Ty*r][tidx] = (iii + tidy+Ty*r < heightA &&  kk + tidx < widthA) ?
+              ARRAY(A, iii + tidy+Ty*r, kk + tidx, widthA) : 0.0;
       }
 
 
@@ -133,10 +133,9 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
        *      Bloc is a two-dimensional array
        *      (see definitiona at the begining of kernels).
        **************************************************************/
-       // TODO: NOT coalesced access to B!
        for (int r = 0; r < Rx; r++) {
-           Bloc[tidy][tidx*r] = (kk + tidy < widthA &&  jjj + tidx*r < widthB) ?
-               ARRAY(B, kk + tidy, jjj + tidx*r, widthB) : 0.0;
+           Bloc[tidy][tidx+Tx*r] = (kk + tidy < widthA &&  jjj + tidx + Tx*r < widthB) ?
+               ARRAY(B, kk + tidy, jjj + tidx + Tx*r, widthB) : 0.0;
        }
 
       __syncthreads();
@@ -157,7 +156,7 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
                  * This assumes of course that you have
                  *   already solved Task 3.1.
                  ***************************************/
-                  css[i][j] +=  
+                  css[i][j] +=
                     Aloc[tidy*Ry + i][k] *
                     Bloc[k][tidx*Rx + j] ;
               }
