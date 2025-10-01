@@ -50,9 +50,6 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
   unsigned int iii = blockIdx.y * Ty * Ry;
   unsigned int jjj = blockIdx.x * Tx * Rx;
 
-  unsigned int i = iii + tidy;
-  unsigned int j = jjj + tidx;
-
   // initialize the result with zero
   // (the neutral element for addition)
   #pragma unroll
@@ -160,16 +157,9 @@ __global__ void mmmSymBlkRegInnSeqKer(ElTp* A, ElTp* B, ElTp* C, int heightA, in
                  * This assumes of course that you have
                  *   already solved Task 3.1.
                  ***************************************/
-                  // if( (iii + threadIdx.y*Ry + i < heightA) &&
-                  //     (kk+k < widthA) &&
-                  //     (jjj + threadIdx.x*Rx + j < widthB)
-                  //   )
-                  // css[i][j] +=
-                  //   A[ (iii + threadIdx.y*Ry + i)*widthA + (kk + k)] *
-                  //   B[ (kk+k)*widthB + jjj + threadIdx.x*Rx + j] ;
-
-                  css[i][j] += Aloc[][]*
-                      Bloc[][]
+                  css[i][j] +=  
+                    Aloc[iii + threadIdx.y*Ry + i][kk + k] *
+                    Bloc[kk+k][jjj + threadIdx.x*Rx + j] ;
               }
           }
       }
