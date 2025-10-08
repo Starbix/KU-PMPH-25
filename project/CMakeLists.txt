@@ -41,30 +41,26 @@ set_target_properties(flash_attention PROPERTIES
 )
 target_link_libraries(flash_attention PRIVATE CUDA::cudart)
 
-# Find Python and pybind11 for Python bindings
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
-include(FetchContent)
-FetchContent_Declare(
-    pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG v3.0.1
-)
-FetchContent_MakeAvailable(pybind11)
+# Find Python Interpreter for running scripts
+find_package(Python COMPONENTS Interpreter REQUIRED)
 
-# Create Python module
-pybind11_add_module(attention_benchmark
-    python/attention_benchmark.cpp
+# Create benchmark executable
+add_executable(benchmark
+    src/benchmark_main.cpp
 )
-target_link_libraries(attention_benchmark PRIVATE
+target_link_libraries(benchmark PRIVATE
     attention
     flash_attention
     CUDA::cudart
 )
 
+# No Python module needed - we now use the C++ executable directly
+
 # Installation rules
-install(TARGETS attention flash_attention attention_benchmark
+install(TARGETS attention flash_attention benchmark
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
 )
 install(DIRECTORY include/
     DESTINATION include
@@ -78,5 +74,4 @@ message(STATUS "  C++ compiler:      ${CMAKE_CXX_COMPILER}")
 message(STATUS "  CUDA compiler:     ${CMAKE_CUDA_COMPILER}")
 message(STATUS "  CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
 message(STATUS "  Python executable: ${Python_EXECUTABLE}")
-message(STATUS "  Python version:    ${Python_VERSION}")
 message(STATUS "")

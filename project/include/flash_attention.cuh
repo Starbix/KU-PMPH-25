@@ -3,10 +3,11 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <vector>
 
 namespace flash_attention {
 
 // Forward declarations for the flash attention mechanisms
+cudaError_t compute(float* d_q, float* d_k, float* d_v, float* d_output,
+                   int batch_size, int seq_len, int head_dim);
 
 }  // namespace flash_attention
