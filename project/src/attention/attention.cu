@@ -1,4 +1,5 @@
 #include "../../include/attention.cuh"
+#include "attention_kernel.cu.h"
 #include <cuda_runtime.h>
 #include <stdio.h>
 
