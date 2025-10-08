@@ -1,0 +1,7 @@
+# Requirements for Attention CUDA project
+numpy>=2.1.2
+matplotlib>=3.10.0
+pytest>=6.0.0
+pybind11>=3.0.1
+torch>=2.8.0  # latest stable version of PyTorch
+python-lsp-server

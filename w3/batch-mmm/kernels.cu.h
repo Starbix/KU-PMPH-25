@@ -115,7 +115,7 @@ void bmmmTiledKer ( ElTp* A,      ElTp* B, char* X_tr,   ElTp* Y
            ElTp v = (Xsh_tr[i_r]!=0) ? 1 : 0;
            acc[i_r] += ab*v;
        }
-       // Xsh_tr will be overwritten in the next iteration
+       // Xsh_tr will be overwritten in the next iteration, so make sure all threads are done using it
        __syncthreads();
    }
 
