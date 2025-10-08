@@ -33,11 +33,11 @@ __global__ void attention_kernel(ElTp* Q, ElTp* K_tr, ElTp* V, ElTp* S, ElTp* P,
     if (row < N && col < N)
         S[row*N+ col] = s;
 
-    // read S from global memory 
+    // read S from global memory TODO
 
-    // compute P = softmax(S)
+    // compute P = softmax(S) TODO
 
-    // write P to global memory
+    // write P to global memory TODO
 
     __shared__ ElTp P_block[T][T];
     __shared__ ElTp V_block[T][T];
