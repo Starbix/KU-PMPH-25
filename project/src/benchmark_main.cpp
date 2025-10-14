@@ -159,7 +159,7 @@ void reshape_for_attention(float* src, float* dst,
 
 // Benchmark standard attention
 double benchmark_attention(float* q, float* k, float* v, float* output,
-                        int batch_size, int seq_length, int head_dim, int num_runs) {
+                        int seq_length, int head_dim, int num_runs) {
     double total_time = 0.0;
 
     for (int i = 0; i < num_runs; ++i) {
@@ -413,7 +413,7 @@ int main(int argc, char* argv[]) {
         // Run benchmarks
         const int effective_batch_size = args.batch_size * args.num_heads;
         double std_time = benchmark_attention(q_bsd, k_bsd, v_bsd, std_output,
-                                            effective_batch_size, seq_length, args.head_dim,
+                                            seq_length, args.head_dim,
                                             args.num_runs);
 
         double flash_time = benchmark_flash_attention(q_bsd, k_bsd, v_bsd, flash_output,
