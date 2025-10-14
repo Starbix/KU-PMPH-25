@@ -53,7 +53,7 @@ namespace attention {
     }
 
     template<class ElTp>
-    cudaError_t compute_attention(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
+    cudaError_t compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
         // implement standard attention by using the kernels from attention_kernel
         const uint32_t T = 16;
         int  dimy = ceil( ((float)N)/T ); 
@@ -61,12 +61,12 @@ namespace attention {
         dim3 block(T, T, 1), grid(dimx, dimy, 1);
 
         // 1. Transpose K
-        ElTp* K_tr = nullptr;
+        ElTp* K_tr = nullptr; // TODO
         cudaMalloc(&K_tr, N * d * sizeof(ElTp));
         transpose<ElTp, T> <<<grid, block>>>(K, K_tr, N, d);
 
         // 2. Call compute_S(Q, K_tr, N, d, S)
-        ElTp* S = nullptr;        
+        ElTp* S = nullptr; // TODO        
         cudaMalloc(&S, N * N * sizeof(ElTp));
         compute_S<ElTp, T> <<<grid, block>>>(Q, K_tr, N, d, S);
 
@@ -89,6 +89,6 @@ namespace attention {
     }
 
     
-    template cudaError_t compute_attention<float>(
+    template cudaError_t compute<float>(
         float*, float*, float*, uint32_t, uint32_t, float*);
 }

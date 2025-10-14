@@ -13,6 +13,6 @@ namespace attention {
 cudaError_t fill_ones(float* d_K, int batch_size, int seq_len, int head_dim);
 
 template<class ElTp>
-cudaError_t compute_attention(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O);
+cudaError_t compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O);
 
 }  // namespace attention

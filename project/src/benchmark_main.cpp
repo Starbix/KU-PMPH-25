@@ -10,6 +10,16 @@
 #include <cuda_runtime.h>
 #include "attention.cuh"
 #include "flash_attention.cuh"
+#include "utils.cu"
+
+int gpuAssert(cudaError_t code) {
+  if(code != cudaSuccess) {
+    printf("GPU Error: %s\n", cudaGetErrorString(code));
+    return -1;
+  }
+  return 0;
+}
+
 
 // Utility function to print help message
 void print_help() {
@@ -162,27 +172,27 @@ double benchmark_attention(float* q, float* k, float* v, float* output,
                         int seq_length, int head_dim, int num_runs) {
     double total_time = 0.0;
 
+    // Allocate device memory
+    float *d_q = nullptr, *d_k = nullptr, *d_v = nullptr, *d_output = nullptr; // TODO: substitute placeholders
+    size_t tensor_size = seq_length * head_dim * sizeof(float);
+
+    cudaMalloc(&d_q, tensor_size);
+    cudaMalloc(&d_k, tensor_size);
+    cudaMalloc(&d_v, tensor_size);
+    cudaMalloc(&d_output, tensor_size);
+
+    // Copy data to device
+    cudaMemcpy(d_q, q, tensor_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_k, k, tensor_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_v, v, tensor_size, cudaMemcpyHostToDevice);
+
+    // Start timing
+    auto start = std::chrono::high_resolution_clock::now(); 
+
     for (int i = 0; i < num_runs; ++i) {
-        // Allocate device memory½
-        float *d_q = nullptr, *d_k = nullptr, *d_v = nullptr, *d_output = nullptr;
-        size_t tensor_size = seq_length * head_dim * sizeof(float);
-
-        cudaMalloc(&d_q, tensor_size);
-        cudaMalloc(&d_k, tensor_size);
-        cudaMalloc(&d_v, tensor_size);
-        cudaMalloc(&d_output, tensor_size);
-
-        // Copy data to device
-        cudaMemcpy(d_q, q, tensor_size, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_k, k, tensor_size, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_v, v, tensor_size, cudaMemcpyHostToDevice);
-
-        // Start timing
-        auto start = std::chrono::high_resolution_clock::now(); 
-
         // Call the attention kernel
         // attention::fill_ones(d_k, batch_size, seq_length, head_dim);
-        attention::compute_attention<float>(
+        cudaError_t error = attention::compute<float>(
             d_q, 
             d_k, 
             d_v, 
@@ -190,24 +200,25 @@ double benchmark_attention(float* q, float* k, float* v, float* output,
             head_dim, 
             d_output
         );
-
-        // Wait for kernel to finish
-        cudaDeviceSynchronize();
-
-        // End timing
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> duration = end - start;
-        total_time += duration.count();
-
-        // Copy result back to host
-        cudaMemcpy(output, d_output, tensor_size, cudaMemcpyDeviceToHost);
-
-        // Free device memory
-        cudaFree(d_q);
-        cudaFree(d_k);
-        cudaFree(d_v);
-        cudaFree(d_output);
     }
+
+    // Wait for kernel to finish
+    cudaDeviceSynchronize();
+    gpuAssert(cudaPeekAtLastError());
+
+    // End timing
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration = end - start;
+    total_time += duration.count();
+
+    // Copy result back to host
+    cudaMemcpy(output, d_output, tensor_size, cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_q);
+    cudaFree(d_k);
+    cudaFree(d_v);
+    cudaFree(d_output);
 
     return total_time / num_runs;
 }
@@ -217,44 +228,44 @@ double benchmark_flash_attention(float* q, float* k, float* v, float* output,
                               int batch_size, int seq_length, int head_dim, int num_runs) {
     double total_time = 0.0;
 
+    // Allocate device memory
+    float *d_q = nullptr, *d_k = nullptr, *d_v = nullptr, *d_output = nullptr;
+    size_t tensor_size = batch_size * seq_length * head_dim * sizeof(float);
+
+    cudaMalloc(&d_q, tensor_size);
+    cudaMalloc(&d_k, tensor_size);
+    cudaMalloc(&d_v, tensor_size);
+    cudaMalloc(&d_output, tensor_size);
+
+    // Copy data to device
+    cudaMemcpy(d_q, q, tensor_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_k, k, tensor_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_v, v, tensor_size, cudaMemcpyHostToDevice);
+
+    // Start timing
+    auto start = std::chrono::high_resolution_clock::now();
+
     for (int i = 0; i < num_runs; ++i) {
-        // Allocate device memory
-        float *d_q = nullptr, *d_k = nullptr, *d_v = nullptr, *d_output = nullptr;
-        size_t tensor_size = batch_size * seq_length * head_dim * sizeof(float);
-
-        cudaMalloc(&d_q, tensor_size);
-        cudaMalloc(&d_k, tensor_size);
-        cudaMalloc(&d_v, tensor_size);
-        cudaMalloc(&d_output, tensor_size);
-
-        // Copy data to device
-        cudaMemcpy(d_q, q, tensor_size, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_k, k, tensor_size, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_v, v, tensor_size, cudaMemcpyHostToDevice);
-
-        // Start timing
-        auto start = std::chrono::high_resolution_clock::now();
-
         // Call the flash attention kernel
         //flash_attention::compute(d_q, d_k, d_v, d_output, batch_size, seq_length, head_dim);
-
-        // Wait for kernel to finish
-        cudaDeviceSynchronize();
-
-        // End timing
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> duration = end - start;
-        total_time += duration.count();
-
-        // Copy result back to host
-        cudaMemcpy(output, d_output, tensor_size, cudaMemcpyDeviceToHost);
-
-        // Free device memory
-        cudaFree(d_q);
-        cudaFree(d_k);
-        cudaFree(d_v);
-        cudaFree(d_output);
     }
+
+    // Wait for kernel to finish
+    cudaDeviceSynchronize();
+
+    // End timing
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration = end - start;
+    total_time += duration.count();
+
+    // Copy result back to host
+    cudaMemcpy(output, d_output, tensor_size, cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_q);
+    cudaFree(d_k);
+    cudaFree(d_v);
+    cudaFree(d_output);
 
     return total_time / num_runs;
 }
