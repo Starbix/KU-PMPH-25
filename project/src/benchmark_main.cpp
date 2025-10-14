@@ -163,9 +163,9 @@ double benchmark_attention(float* q, float* k, float* v, float* output,
     double total_time = 0.0;
 
     for (int i = 0; i < num_runs; ++i) {
-        // Allocate device memory
+        // Allocate device memory½
         float *d_q = nullptr, *d_k = nullptr, *d_v = nullptr, *d_output = nullptr;
-        size_t tensor_size = batch_size * seq_length * head_dim * sizeof(float);
+        size_t tensor_size = seq_length * head_dim * sizeof(float);
 
         cudaMalloc(&d_q, tensor_size);
         cudaMalloc(&d_k, tensor_size);
@@ -178,10 +178,18 @@ double benchmark_attention(float* q, float* k, float* v, float* output,
         cudaMemcpy(d_v, v, tensor_size, cudaMemcpyHostToDevice);
 
         // Start timing
-        auto start = std::chrono::high_resolution_clock::now();
+        auto start = std::chrono::high_resolution_clock::now(); 
 
         // Call the attention kernel
-        attention::fill_ones(d_k, batch_size, seq_length, head_dim);
+        // attention::fill_ones(d_k, batch_size, seq_length, head_dim);
+        attention::compute_attention<float>(
+            d_q, 
+            d_k, 
+            d_v, 
+            seq_length, 
+            head_dim, 
+            d_output
+        );
 
         // Wait for kernel to finish
         cudaDeviceSynchronize();

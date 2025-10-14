@@ -2,38 +2,87 @@
 #include "attention_kernel.cu.h"
 #include <cuda_runtime.h>
 #include <stdio.h>
+#include "../utils.cu"
 
 namespace attention {
 
-// CUDA kernel to fill the K matrix with 1s
-__global__ void fill_ones_kernel(float* K, int total_elements) {
-    // Calculate the global thread index
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    // Check if thread is within bounds
-    if (idx < total_elements) {
-        // Set the value to 1.0
-        K[idx] = 1.0f;
+    // This function was copied from the lecture notes, chapter 6.2
+    template<class ElTp, int T>
+    __global__ void transpose(ElTp* M, ElTp* M_tr, uint32_t rows, uint32_t cols) {
+    //     __shared__ float tile [T][T];
+    //     unsigned int tidx = threadIdx .x;
+    //     unsigned int tidy = threadIdx .y;
+    //     unsigned int j = blockIdx .x*T + tidx ;
+    //     unsigned int i = blockIdx .y*T + tidy ;
+    //     if ( j < C && i < R )
+    //     tile [ tidy ][ tidx ] = A[i* colsA + j ];
+    //     __syncthreads ();
+    //     if ( j < C && i < R )
+    //     trA [j*R + i] = tile [ tidy ][ tidx ];
     }
+
+
+    // TODO: remove dummy code
+    // CUDA kernel to fill the K matrix with 1s
+    __global__ void fill_ones_kernel(float* K, int total_elements) {
+        // Calculate the global thread index
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        
+        // Check if thread is within bounds
+        if (idx < total_elements) {
+            // Set the value to 1.0
+            K[idx] = 1.0f;
+        }
+    }
+
+    // TODO: remove dummy function
+    // Host function to launch the fill_ones_kernel
+    cudaError_t fill_ones(float* d_K, int batch_size, int seq_len, int head_dim) {
+        // Calculate total elements in K
+        int total_elements = batch_size * seq_len * head_dim;
+        
+        // Configure the kernel launch parameters
+        int blockSize = 256;
+        int numBlocks = (total_elements + blockSize - 1) / blockSize;
+        
+        // Launch the kernel
+        fill_ones_kernel<<<numBlocks, blockSize>>>(d_K, total_elements);
+        
+        // Return any error that occurred
+        return cudaGetLastError();
+    }
+
+    template<class ElTp>
+    cudaError_t compute_attention(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
+        // implement standard attention by using the kernels from attention_kernel
+        uint32_t T = 0; 
+
+        // 1. Transpose K
+        ElTp* K_tr = nullptr;
+        cudaMalloc(&K_tr, N * d * sizeof(ElTp));
+            // b. call transpose kernel
+
+        // 2. Call compute_S(Q, K_tr, N, d, S)
+        ElTp* S = nullptr;        
+        cudaMalloc(&S, N * N * sizeof(ElTp));
+        //      b. call compute S kernel
+
+        // 3. Call compute_P(S, N)
+        ElTp* P = nullptr;        
+        cudaMalloc(&P, N * N * sizeof(ElTp));
+        //      b. call compute P kernel
+
+        // 4. Call compute_O(V, P, N, d, O)
+    
+        cudaFree(K_tr);
+        cudaFree(S);
+        cudaFree(P);
+
+        // Return any error that occurred
+        return cudaGetLastError();
+    }
+
+    
+    template cudaError_t compute_attention<float>(
+        float*, float*, float*, uint32_t, uint32_t, float*);
 }
-
-// Host function to launch the fill_ones_kernel
-cudaError_t fill_ones(float* d_K, int batch_size, int seq_len, int head_dim) {
-    // Calculate total elements in K
-    int total_elements = batch_size * seq_len * head_dim;
-    
-    // Configure the kernel launch parameters
-    int blockSize = 256;
-    int numBlocks = (total_elements + blockSize - 1) / blockSize;
-    
-    // Launch the kernel
-    fill_ones_kernel<<<numBlocks, blockSize>>>(d_K, total_elements);
-    
-    // Return any error that occurred
-    return cudaGetLastError();
-}
-
-// Placeholder for actual attention computation
-// This would be implemented with the full attention mechanism
-
-} // namespace attention
