@@ -55,25 +55,31 @@ namespace attention {
     template<class ElTp>
     cudaError_t compute_attention(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
         // implement standard attention by using the kernels from attention_kernel
-        uint32_t T = 0; 
+        const uint32_t T = 16;
+        int  dimy = ceil( ((float)N)/T ); 
+        int  dimx = ceil( ((float)d)/T );
+        dim3 block(T, T, 1), grid(dimx, dimy, 1);
 
         // 1. Transpose K
         ElTp* K_tr = nullptr;
         cudaMalloc(&K_tr, N * d * sizeof(ElTp));
-            // b. call transpose kernel
+        transpose<ElTp, T> <<<grid, block>>>(K, K_tr, N, d);
 
         // 2. Call compute_S(Q, K_tr, N, d, S)
         ElTp* S = nullptr;        
         cudaMalloc(&S, N * N * sizeof(ElTp));
-        //      b. call compute S kernel
+        compute_S<ElTp, T> <<<grid, block>>>(Q, K_tr, N, d, S);
 
         // 3. Call compute_P(S, N)
         ElTp* P = nullptr;        
         cudaMalloc(&P, N * N * sizeof(ElTp));
-        //      b. call compute P kernel
+        int threads_per_block = 256;         
+        int num_blocks = (N + threads_per_block - 1) / threads_per_block;
+        compute_P_online<ElTp> <<<num_blocks, threads_per_block>>>(S, P, N);
 
         // 4. Call compute_O(V, P, N, d, O)
-    
+        compute_S<ElTp, T> <<<grid, block>>>(V, P, N, d, O);
+
         cudaFree(K_tr);
         cudaFree(S);
         cudaFree(P);
