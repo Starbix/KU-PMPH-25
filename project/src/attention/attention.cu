@@ -9,16 +9,16 @@ namespace attention {
     // This function was copied from the lecture notes, chapter 6.2
     template<class ElTp, int T>
     __global__ void transpose(ElTp* M, ElTp* M_tr, uint32_t rows, uint32_t cols) {
-    //     __shared__ float tile [T][T];
-    //     unsigned int tidx = threadIdx .x;
-    //     unsigned int tidy = threadIdx .y;
-    //     unsigned int j = blockIdx .x*T + tidx ;
-    //     unsigned int i = blockIdx .y*T + tidy ;
-    //     if ( j < C && i < R )
-    //     tile [ tidy ][ tidx ] = A[i* colsA + j ];
-    //     __syncthreads ();
-    //     if ( j < C && i < R )
-    //     trA [j*R + i] = tile [ tidy ][ tidx ];
+        __shared__ float tile [T][T];
+        unsigned int tidx = threadIdx .x;
+        unsigned int tidy = threadIdx .y;
+        unsigned int j = blockIdx .x*T + tidx ;
+        unsigned int i = blockIdx .y*T + tidy ;
+        if ( j < cols && i < rows )
+        tile [ tidy ][ tidx ] = M[i*cols + j ];
+        __syncthreads ();
+        if ( j < cols && i < rows )
+        M_tr [j*rows + i] = tile [ tidy ][ tidx ];
     }
 
 
