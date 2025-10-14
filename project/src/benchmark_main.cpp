@@ -204,10 +204,12 @@ double benchmark_attention(float* q, float* k, float* v, float* output,
 
     // Wait for kernel to finish
     cudaDeviceSynchronize();
-    gpuAssert(cudaPeekAtLastError());
-
+    
     // End timing
     auto end = std::chrono::high_resolution_clock::now();
+    
+    gpuAssert(cudaPeekAtLastError());
+
     std::chrono::duration<double, std::milli> duration = end - start;
     total_time += duration.count();
 
@@ -253,8 +255,11 @@ double benchmark_flash_attention(float* q, float* k, float* v, float* output,
     // Wait for kernel to finish
     cudaDeviceSynchronize();
 
-    // End timing
+    // end timing
     auto end = std::chrono::high_resolution_clock::now();
+    
+    gpuAssert(cudaPeekAtLastError());
+
     std::chrono::duration<double, std::milli> duration = end - start;
     total_time += duration.count();
 
