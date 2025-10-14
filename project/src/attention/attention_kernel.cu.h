@@ -1,8 +1,13 @@
 
 
+/*
+Some of the code in this file is inspired by the lecture notes on how to make 
+tiled Matrix Multiplication, chapter 6.3. 
+*/
+
 
 template<class ElTp, int T>
-__global__ void attention_kernel(ElTp* Q, ElTp* K_tr, ElTp* V, ElTp* S, ElTp* P, int N, int d, ElTp* O) {
+__global__ void compute_S(ElTp* Q, ElTp* K_tr, int N, int d, ElTp* S) {
     
     __shared__ ElTp Q_block[T][T];
     __shared__ ElTp K_tr_block[T][T];
@@ -32,15 +37,27 @@ __global__ void attention_kernel(ElTp* Q, ElTp* K_tr, ElTp* V, ElTp* S, ElTp* P,
     // write S to global memory 
     if (row < N && col < N)
         S[row*N+ col] = s;
+}
 
+
+template<class ElTp, int T>
+__global__ void compute_P(ElTp* S, int N) {
     // read S from global memory TODO
 
     // compute P = softmax(S) TODO
 
     // write P to global memory TODO
+}
 
+
+template<class ElTp, int T>
+__global__ void compute_O(ElTp* V, ElTp* P, int N, int d, ElTp* O) {
+    
     __shared__ ElTp P_block[T][T];
     __shared__ ElTp V_block[T][T];
+    
+    int row = blockIdx.y * T + threadIdx.y;
+    int col = blockIdx.x * T + threadIdx.x;
         
     ElTp o = 0.0;
     for (int kk = 0; kk < d; kk += T) {
@@ -64,6 +81,7 @@ __global__ void attention_kernel(ElTp* Q, ElTp* K_tr, ElTp* V, ElTp* S, ElTp* P,
     // write O to global memory
     if (row < N && col < d)
         O[row*d + col] = o;
-
-    // done
 }
+
+
+
