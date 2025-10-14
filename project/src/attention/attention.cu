@@ -15,10 +15,10 @@ namespace attention {
         unsigned int j = blockIdx .x*T + tidx ;
         unsigned int i = blockIdx .y*T + tidy ;
         if ( j < cols && i < rows )
-        tile [ tidy ][ tidx ] = M[i*cols + j ];
+            tile [ tidy ][ tidx ] = M[i*cols + j ];
         __syncthreads ();
         if ( j < cols && i < rows )
-        M_tr [j*rows + i] = tile [ tidy ][ tidx ];
+            M_tr [j*rows + i] = tile [ tidy ][ tidx ];
     }
 
 
