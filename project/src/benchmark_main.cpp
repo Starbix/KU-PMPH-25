@@ -191,7 +191,6 @@ double benchmark_attention(float* q, float* k, float* v, float* output,
 
     for (int i = 0; i < num_runs; ++i) {
         // Call the attention kernel
-        // attention::fill_ones(d_k, batch_size, seq_length, head_dim);
         cudaError_t error = attention::compute<float>(
             d_q, 
             d_k, 
@@ -249,7 +248,14 @@ double benchmark_flash_attention(float* q, float* k, float* v, float* output,
 
     for (int i = 0; i < num_runs; ++i) {
         // Call the flash attention kernel
-        //flash_attention::compute(d_q, d_k, d_v, d_output, batch_size, seq_length, head_dim);
+        cudaError_t error = flash_attention::compute<float>(
+            d_q, 
+            d_k, 
+            d_v, 
+            seq_length, 
+            head_dim, 
+            d_output
+        );
     }
 
     // Wait for kernel to finish

@@ -61,24 +61,24 @@ namespace attention {
         dim3 block(T, T, 1), grid(dimx, dimy, 1);
 
         // 1. Transpose K
-        ElTp* K_tr = nullptr; // TODO
+        ElTp* K_tr;
         cudaMalloc(&K_tr, N * d * sizeof(ElTp));
         transpose<ElTp, T> <<<grid, block>>>(K, K_tr, N, d);
 
         // 2. Call compute_S(Q, K_tr, N, d, S)
-        ElTp* S = nullptr; // TODO        
+        ElTp* S;
         cudaMalloc(&S, N * N * sizeof(ElTp));
         compute_S<ElTp, T> <<<grid, block>>>(Q, K_tr, N, d, S);
 
         // 3. Call compute_P(S, N)
-        ElTp* P = nullptr;        
+        ElTp* P;
         cudaMalloc(&P, N * N * sizeof(ElTp));
         int threads_per_block = 256;         
         int num_blocks = (N + threads_per_block - 1) / threads_per_block;
         compute_P_online<ElTp> <<<num_blocks, threads_per_block>>>(S, P, N);
 
         // 4. Call compute_O(V, P, N, d, O)
-        compute_S<ElTp, T> <<<grid, block>>>(V, P, N, d, O);
+        compute_O<ElTp, T> <<<grid, block>>>(V, P, N, d, O);
 
         cudaFree(K_tr);
         cudaFree(S);
