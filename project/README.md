@@ -8,18 +8,6 @@ This project implements standard Attention and FlashAttention in CUDA, with Pyth
 
 ```
 project/
-├── CMakeLists.txt        # Main CMake configuration file
-├── include/              # Header files
-│   ├── attention.cuh     # Header for standard attention
-│   └── flash_attention.cuh # Header for flash attention
-├── python/               # Python scripts for calling C++ benchmarks
-│   └── run_benchmark.py  # Python script for running C++ benchmarks and visualizing results
-└── src/                  # Source files
-    ├── attention/        # Standard attention implementation
-    │   └── attention.cu  # CUDA implementation of standard attention
-    ├── flash_attention/  # FlashAttention implementation
-    │   └── flash_attention.cu # CUDA implementation of FlashAttention
-    └── benchmark_main.cpp # Standalone C++ benchmark executable
 ```
 
 ## Prerequisites
@@ -34,7 +22,7 @@ project/
 ###
 ```bash
 # on hendrix, load modules
-module load cuda/12.8 cmake/4.0.3 python/3.12.8 gcc/13.2.0
+module load cuda/12.8 cmake/4.0.3 python/3.12.8 gcc/13.2.0 ninja/1.8.2
 # Make the script executable
 chmod +x setup_env.sh
 

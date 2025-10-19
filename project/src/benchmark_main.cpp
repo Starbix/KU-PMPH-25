@@ -1,13 +1,12 @@
 #include <iostream>
-#include <chrono>
 #include <vector>
-#include <string>
-#include <algorithm>
-#include <random>
-#include <fstream>
+#include <chrono>
 #include <iomanip>
-#include <cmath>
+#include <string>
+#include <cstring>
+#include <torch/torch.h>
 #include <cuda_runtime.h>
+<<<<<<< Updated upstream
 #include "attention.cuh"
 #include "flash_attention.cuh"
 #include "utils.cu"
@@ -20,110 +19,34 @@ int gpuAssert(cudaError_t code) {
   return 0;
 }
 
+=======
+>>>>>>> Stashed changes
 
-// Utility function to print help message
-void print_help() {
-    std::cout << "Usage: benchmark [options]" << std::endl;
-    std::cout << "Options:" << std::endl;
-    std::cout << "  --batch_size <size>       Batch size for the test (default: 2)" << std::endl;
-    std::cout << "  --num_heads <num>         Number of attention heads (default: 8)" << std::endl;
-    std::cout << "  --head_dim <dim>          Dimension of each attention head (default: 64)" << std::endl;
-    std::cout << "  --num_runs <runs>         Number of runs for each benchmark (default: 10)" << std::endl;
-    std::cout << "  --seq_lengths <list>      Comma-separated list of sequence lengths to benchmark (default: 128,256,512,1024,2048,4096,8192)" << std::endl;
-    std::cout << "  --test_kernel_only        Only test the fill_ones kernel with a small matrix" << std::endl;
-    std::cout << "  --output <file>           Output file path for benchmark results (default: stdout)" << std::endl;
-    std::cout << "  --csv                     Output results in CSV format" << std::endl;
-    std::cout << "  --verify                  Verify correctness between implementations" << std::endl;
-    std::cout << "  --help                    Display this help message and exit" << std::endl;
-}
+#include "../include/attention.h"
+#include "../include/flash_attention.h"
 
-// Parse command-line arguments
-class Arguments {
-public:
-    int batch_size = 2;
-    int num_heads = 8;
+struct BenchmarkConfig {
+    int batch_heads = 8;
+    int seq_len = 128;
     int head_dim = 64;
     int num_runs = 10;
-    std::vector<int> seq_lengths = {128, 256, 512, 1024, 2048, 4096, 8192};
-    bool test_kernel_only = false;
-    std::string output_file;
-    bool csv_format = false;
     bool verify = false;
-
-    Arguments(int argc, char* argv[]) {
-        for (int i = 1; i < argc; ++i) {
-            std::string arg = argv[i];
-
-            if (arg == "--help") {
-                print_help();
-                exit(0);
-            } else if (arg == "--batch_size" && i + 1 < argc) {
-                batch_size = std::stoi(argv[++i]);
-            } else if (arg == "--num_heads" && i + 1 < argc) {
-                num_heads = std::stoi(argv[++i]);
-            } else if (arg == "--head_dim" && i + 1 < argc) {
-                head_dim = std::stoi(argv[++i]);
-            } else if (arg == "--num_runs" && i + 1 < argc) {
-                num_runs = std::stoi(argv[++i]);
-            } else if (arg == "--seq_lengths" && i + 1 < argc) {
-                seq_lengths.clear();
-                std::string lengths_str = argv[++i];
-                size_t pos = 0;
-                std::string token;
-                while ((pos = lengths_str.find(',')) != std::string::npos) {
-                    token = lengths_str.substr(0, pos);
-                    seq_lengths.push_back(std::stoi(token));
-                    lengths_str.erase(0, pos + 1);
-                }
-                if (!lengths_str.empty()) {
-                    seq_lengths.push_back(std::stoi(lengths_str));
-                }
-            } else if (arg == "--test_kernel_only") {
-                test_kernel_only = true;
-            } else if (arg == "--output" && i + 1 < argc) {
-                output_file = argv[++i];
-            } else if (arg == "--csv") {
-                csv_format = true;
-            } else if (arg == "--verify") {
-                verify = true;
-            } else {
-                std::cerr << "Unknown argument: " << arg << std::endl;
-                print_help();
-                exit(1);
-            }
-        }
-    }
+    bool verbose = false;
 };
 
-// Utility function to print matrix for debugging
-void print_matrix(const float* matrix, int batch_size, int rows, int cols, const std::string& name,
-                  int max_batch = 1, int max_rows = 5, int max_cols = 5) {
-    std::cout << name << " shape: [" << batch_size << ", " << rows << ", " << cols << "]" << std::endl;
-
-    max_batch = std::min(max_batch, batch_size);
-    max_rows = std::min(max_rows, rows);
-    max_cols = std::min(max_cols, cols);
-
-    for (int b = 0; b < max_batch; ++b) {
-        std::cout << "Batch " << b << ":" << std::endl;
-        for (int r = 0; r < max_rows; ++r) {
-            std::cout << "  ";
-            for (int c = 0; c < max_cols; ++c) {
-                int idx = b * (rows * cols) + r * cols + c;
-                std::cout << std::fixed << std::setprecision(2) << std::setw(6) << matrix[idx];
-            }
-            if (cols > max_cols) {
-                std::cout << " ...";
-            }
-            std::cout << std::endl;
-        }
-        if (rows > max_rows) {
-            std::cout << "  ..." << std::endl;
-        }
-        std::cout << std::endl;
-    }
+void print_usage(const char* program_name) {
+    std::cout << "Usage: " << program_name << " [options]\n";
+    std::cout << "Options:\n";
+    std::cout << "  --batch_heads N    Number of batch * heads (default: 8)\n";
+    std::cout << "  --seq_len N        Sequence length (default: 128)\n";
+    std::cout << "  --head_dim N       Head dimension (default: 64)\n";
+    std::cout << "  --num_runs N       Number of benchmark runs (default: 10)\n";
+    std::cout << "  --verify           Verify correctness between implementations\n";
+    std::cout << "  --verbose          Print detailed timing information\n";
+    std::cout << "  --help             Show this help message\n";
 }
 
+<<<<<<< Updated upstream
 // Generate random test data
 void generate_test_data(float* q, float* k, float* v,
                         int batch_size, int seq_length, int num_heads, int head_dim) {
@@ -465,41 +388,210 @@ int main(int argc, char* argv[]) {
                 std::cout << "," << max_abs_error << "," << mean_abs_error;
             }
             std::cout << std::endl;
+=======
+bool parse_args(int argc, char** argv, BenchmarkConfig& config) {
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        
+        if (arg == "--help") {
+            print_usage(argv[0]);
+            return false;
+        } else if (arg == "--batch_heads" && i + 1 < argc) {
+            config.batch_heads = std::atoi(argv[++i]);
+        } else if (arg == "--seq_len" && i + 1 < argc) {
+            config.seq_len = std::atoi(argv[++i]);
+        } else if (arg == "--head_dim" && i + 1 < argc) {
+            config.head_dim = std::atoi(argv[++i]);
+        } else if (arg == "--num_runs" && i + 1 < argc) {
+            config.num_runs = std::atoi(argv[++i]);
+        } else if (arg == "--verify") {
+            config.verify = true;
+        } else if (arg == "--verbose") {
+            config.verbose = true;
+>>>>>>> Stashed changes
         } else {
-            std::cout << "  Standard Attention: " << std::fixed << std::setprecision(4) << std_time << " ms" << std::endl;
-            std::cout << "  Flash Attention:    " << std::fixed << std::setprecision(4) << flash_time << " ms" << std::endl;
-            std::cout << "  Speedup:            " << std::fixed << std::setprecision(2) << speedup << "x" << std::endl;
-
-            if (args.verify) {
-                std::cout << "  Max Error:          " << std::scientific << std::setprecision(6) << max_abs_error << std::endl;
-                std::cout << "  Mean Error:         " << std::scientific << std::setprecision(6) << mean_abs_error << std::endl;
-            }
-            std::cout << std::endl;
+            std::cerr << "Unknown argument: " << arg << std::endl;
+            print_usage(argv[0]);
+            return false;
         }
-
-        // Clean up
-        delete[] q_bhsd;
-        delete[] k_bhsd;
-        delete[] v_bhsd;
-        delete[] q_bsd;
-        delete[] k_bsd;
-        delete[] v_bsd;
-        delete[] std_output;
-        delete[] flash_output;
     }
-
-    // Output summary
-    if (!args.csv_format) {
-        std::cout << "Summary:" << std::endl;
-        std::cout << "Maximum speedup: " << std::fixed << std::setprecision(2)
-                  << max_speedup << "x at sequence length " << max_speedup_seq_len << std::endl;
+    
+    // Basic validation
+    if (config.batch_heads <= 0 || config.seq_len <= 0 || config.head_dim <= 0 || config.num_runs <= 0) {
+        std::cerr << "Error: All dimensions and num_runs must be positive" << std::endl;
+        return false;
     }
+    
+    return true;
+}
 
-    // Restore cout if redirected
-    if (original_cout) {
-        std::cout.rdbuf(original_cout);
-        output_file.close();
+torch::Tensor create_random_tensor(int batch_heads, int seq_len, int head_dim) {
+    auto options = torch::TensorOptions()
+        .dtype(torch::kFloat32)
+        .device(torch::kCUDA)
+        .requires_grad(false);
+    
+    return torch::randn({batch_heads, seq_len, head_dim}, options);
+}
+
+double benchmark_implementation(
+    torch::Tensor (*impl)(torch::Tensor, torch::Tensor, torch::Tensor),
+    torch::Tensor Q, torch::Tensor K, torch::Tensor V,
+    int num_runs, const std::string& name, bool verbose
+) {
+    // Warmup
+    auto warmup_result = impl(Q, K, V);
+    torch::cuda::synchronize();
+    
+    std::vector<double> times;
+    times.reserve(num_runs);
+    
+    for (int run = 0; run < num_runs; run++) {
+        auto start = std::chrono::high_resolution_clock::now();
+        
+        auto result = impl(Q, K, V);
+        torch::cuda::synchronize();
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration<double, std::milli>(end - start).count();
+        times.push_back(duration);
+        
+        if (verbose) {
+            std::cout << name << " run " << std::setw(2) << run 
+                     << ": " << std::fixed << std::setprecision(3) 
+                     << duration << " ms" << std::endl;
+        }
     }
+    
+    // Calculate average
+    double total = 0.0;
+    for (double time : times) {
+        total += time;
+    }
+    
+    return total / num_runs;
+}
 
+torch::Tensor torch_reference_attention(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
+    // Reference PyTorch attention implementation
+    // TODO: Add scaling factor 1/sqrt(head_dim)
+    auto scores = torch::matmul(Q, K.transpose(-2, -1));
+    auto probs = torch::softmax(scores, -1);
+    auto output = torch::matmul(probs, V);
+    return output;
+}
+
+bool verify_correctness(torch::Tensor output1, torch::Tensor output2, const std::string& name1, const std::string& name2) {
+    // Check if outputs are close (allowing for numerical differences)
+    bool is_close = torch::allclose(output1, output2, 1e-4, 1e-4);
+    
+    if (is_close) {
+        std::cout << "✓ Verification PASSED: " << name1 << " and " << name2 << " outputs match" << std::endl;
+    } else {
+        std::cout << "✗ Verification FAILED: " << name1 << " and " << name2 << " outputs differ" << std::endl;
+        
+        // Print some statistics about the differences
+        auto diff = (output1 - output2).abs();
+        auto max_diff = torch::max(diff).item<float>();
+        auto mean_diff = torch::mean(diff).item<float>();
+        
+        std::cout << "  Max difference: " << max_diff << std::endl;
+        std::cout << "  Mean difference: " << mean_diff << std::endl;
+    }
+    
+    return is_close;
+}
+
+int main(int argc, char** argv) {
+    BenchmarkConfig config;
+    
+    if (!parse_args(argc, argv, config)) {
+        return 1;
+    }
+    
+    // Check CUDA availability
+    if (!torch::cuda::is_available()) {
+        std::cerr << "Error: CUDA is not available" << std::endl;
+        return 1;
+    }
+    
+    std::cout << "Attention Implementations Benchmark" << std::endl;
+    std::cout << "====================================" << std::endl;
+    std::cout << "Configuration:" << std::endl;
+    std::cout << "  Batch * Heads: " << config.batch_heads << std::endl;
+    std::cout << "  Sequence Length: " << config.seq_len << std::endl;
+    std::cout << "  Head Dimension: " << config.head_dim << std::endl;
+    std::cout << "  Number of Runs: " << config.num_runs << std::endl;
+    std::cout << "  Verification: " << (config.verify ? "enabled" : "disabled") << std::endl;
+    std::cout << std::endl;
+    
+    // Create input tensors
+    std::cout << "Creating input tensors..." << std::endl;
+    auto Q = create_random_tensor(config.batch_heads, config.seq_len, config.head_dim);
+    auto K = create_random_tensor(config.batch_heads, config.seq_len, config.head_dim);
+    auto V = create_random_tensor(config.batch_heads, config.seq_len, config.head_dim);
+    
+    std::cout << "Input tensor shape: [" << config.batch_heads << ", " 
+              << config.seq_len << ", " << config.head_dim << "]" << std::endl;
+    std::cout << std::endl;
+    
+    // Benchmark PyTorch reference
+    std::cout << "Benchmarking PyTorch reference..." << std::endl;
+    double avg_time_torch = benchmark_implementation(
+        torch_reference_attention, Q, K, V, config.num_runs, "PyTorch", config.verbose
+    );
+    
+    std::cout << std::endl;
+    
+    // Benchmark standard attention
+    std::cout << "Benchmarking standard attention..." << std::endl;
+    double avg_time_attention = benchmark_implementation(
+        attention::forward, Q, K, V, config.num_runs, "Attention", config.verbose
+    );
+    
+    std::cout << std::endl;
+    
+    // Benchmark flash attention
+    std::cout << "Benchmarking flash attention..." << std::endl;
+    double avg_time_flash = benchmark_implementation(
+        flash_attention::forward, Q, K, V, config.num_runs, "Flash", config.verbose
+    );
+    
+    std::cout << std::endl;
+    
+    // Print results
+    std::cout << "Results:" << std::endl;
+    std::cout << "--------" << std::endl;
+    std::cout << "PyTorch Reference:  " << std::fixed << std::setprecision(3) 
+              << avg_time_torch << " ms (avg)" << std::endl;
+    std::cout << "Standard Attention: " << std::fixed << std::setprecision(3) 
+              << avg_time_attention << " ms (avg)" << std::endl;
+    std::cout << "Flash Attention:    " << std::fixed << std::setprecision(3) 
+              << avg_time_flash << " ms (avg)" << std::endl;
+    
+    if (avg_time_attention > 0 && avg_time_flash > 0) {
+        double speedup = avg_time_attention / avg_time_flash;
+        std::cout << "Speedup (Flash/Std): " << std::fixed << std::setprecision(2) 
+                  << speedup << "x" << std::endl;
+    }
+    
+    std::cout << std::endl;
+    
+    // Verification if requested
+    if (config.verify) {
+        std::cout << "Running verification..." << std::endl;
+        
+        auto output_torch = torch_reference_attention(Q, K, V);
+        auto output_attention = attention::forward(Q, K, V);
+        auto output_flash = flash_attention::forward(Q, K, V);
+        
+        verify_correctness(output_attention, output_torch, "Standard Attention", "PyTorch Reference");
+        verify_correctness(output_flash, output_torch, "Flash Attention", "PyTorch Reference");
+        verify_correctness(output_flash, output_attention, "Flash Attention", "Standard Attention");
+        std::cout << std::endl;
+    }
+    
+    std::cout << "Benchmark completed successfully!" << std::endl;
+    
     return 0;
 }

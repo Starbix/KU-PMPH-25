@@ -1,11 +1,12 @@
-#include "../../include/attention.cuh"
 #include "attention_kernel.cu.h"
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include "../utils.cu"
 
-namespace attention {
+// Forward declaration of transpose kernel
+__global__ void transpose_kernel(float* input, float* output, int rows, int cols);
 
+<<<<<<< Updated upstream
     // This function was copied from the lecture notes, chapter 6.2
     template<class ElTp, int T>
     __global__ void transpose(ElTp* M, ElTp* M_tr, uint32_t rows, uint32_t cols) {
@@ -92,3 +93,131 @@ namespace attention {
     template cudaError_t compute<float>(
         float*, float*, float*, uint32_t, uint32_t, float*);
 }
+=======
+// CUDA kernel launcher that interfaces with the torch wrapper
+cudaError_t launch_attention_kernels(
+    float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
+    int batch_heads, int seq_len, int head_dim
+) {
+    // Process each batch_head independently
+    for (int batch_head = 0; batch_head < batch_heads; batch_head++) {
+        // Calculate offsets for current batch_head
+        size_t offset = batch_head * seq_len * head_dim;
+        float* Q_batch = Q_ptr + offset;
+        float* K_batch = K_ptr + offset;
+        float* V_batch = V_ptr + offset;
+        float* O_batch = O_ptr + offset;
+        
+        // Allocate temporary memory for S (attention scores) and P (probabilities)
+        float* S_dev;
+        float* P_dev;
+        float* K_tr_dev; // K transpose
+        
+        size_t S_size = seq_len * seq_len * sizeof(float);
+        size_t K_tr_size = seq_len * head_dim * sizeof(float);
+        
+        cudaError_t err = cudaMalloc(&S_dev, S_size);
+        if (err != cudaSuccess) return err;
+        
+        err = cudaMalloc(&P_dev, S_size);
+        if (err != cudaSuccess) {
+            cudaFree(S_dev);
+            return err;
+        }
+        
+        err = cudaMalloc(&K_tr_dev, K_tr_size);
+        if (err != cudaSuccess) {
+            cudaFree(S_dev);
+            cudaFree(P_dev);
+            return err;
+        }
+        
+        // Transpose K for matrix multiplication
+        // Simple transpose kernel - could be optimized
+        dim3 transpose_block(16, 16);
+        dim3 transpose_grid((head_dim + 15) / 16, (seq_len + 15) / 16);
+        
+        // Launch transpose kernel
+        transpose_kernel<<<transpose_grid, transpose_block>>>(
+            K_batch, K_tr_dev, seq_len, head_dim
+        );
+        
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            cudaFree(S_dev);
+            cudaFree(P_dev);
+            cudaFree(K_tr_dev);
+            return err;
+        }
+        
+        // Step 1: Compute S = Q * K^T
+        const int TILE_SIZE = 16;
+        dim3 block_S(TILE_SIZE, TILE_SIZE);
+        dim3 grid_S((seq_len + TILE_SIZE - 1) / TILE_SIZE, 
+                   (seq_len + TILE_SIZE - 1) / TILE_SIZE);
+        
+        compute_S<float, TILE_SIZE><<<grid_S, block_S>>>(
+            Q_batch, K_tr_dev, seq_len, head_dim, S_dev
+        );
+        
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            cudaFree(S_dev);
+            cudaFree(P_dev);
+            cudaFree(K_tr_dev);
+            return err;
+        }
+        
+        // Step 2: Compute P = softmax(S)
+        // Use the shared memory version for better performance
+        dim3 block_P(256);  // threads per block
+        dim3 grid_P(seq_len);  // one block per row
+        
+        compute_P_shared_mem<float, TILE_SIZE><<<grid_P, block_P>>>(
+            S_dev, P_dev, seq_len
+        );
+        
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            cudaFree(S_dev);
+            cudaFree(P_dev);
+            cudaFree(K_tr_dev);
+            return err;
+        }
+        
+        // Step 3: Compute O = P * V
+        dim3 block_O(TILE_SIZE, TILE_SIZE);
+        dim3 grid_O((head_dim + TILE_SIZE - 1) / TILE_SIZE,
+                   (seq_len + TILE_SIZE - 1) / TILE_SIZE);
+        
+        compute_O<float, TILE_SIZE><<<grid_O, block_O>>>(
+            V_batch, P_dev, seq_len, head_dim, O_batch
+        );
+        
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            cudaFree(S_dev);
+            cudaFree(P_dev);
+            cudaFree(K_tr_dev);
+            return err;
+        }
+        
+        // Cleanup temporary memory
+        cudaFree(S_dev);
+        cudaFree(P_dev);
+        cudaFree(K_tr_dev);
+    }
+    
+    return cudaSuccess;
+}
+
+// Simple transpose kernel
+__global__ void transpose_kernel(float* input, float* output, int rows, int cols) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row < rows && col < cols) {
+        output[col * rows + row] = input[row * cols + col];
+    }
+}
+>>>>>>> Stashed changes

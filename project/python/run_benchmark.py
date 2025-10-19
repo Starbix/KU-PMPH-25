@@ -1,180 +1,376 @@
 #!/usr/bin/env python3
-# run_benchmark.py - Python script to run the C++ benchmark and visualize results
+"""
+Python benchmark script for attention implementations.
+Compares standard attention and flash attention implementations.
+"""
 
 import argparse
-import subprocess
 import os
-import sys
-import numpy as np
+import time
+import torch
+import torch.nn.functional as F
+from torch.utils.cpp_extension import load
 import matplotlib.pyplot as plt
-import csv
-from typing import Dict, List, Any, Optional, Tuple
+import numpy as np
+
+# Set CUDA architecture for compilation
+os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
 
 
-def parse_csv_output(output: str) -> Dict[str, List[Any]]:
-    """Parse CSV output from the C++ benchmark."""
-    lines = output.strip().split("\n")
-    if len(lines) < 2:  # Need at least header and one data row
-        raise ValueError("Invalid CSV output format")
+def load_attention_modules():
+    """Load the attention and flash_attention CUDA modules."""
+    print("Loading attention module...")
+    attention = load(
+        name="attention",
+        sources=[
+            "src/attention/attention.cpp",
+            "src/attention/attention.cu",
+        ],
+        verbose=False,
+        with_cuda=True,
+        extra_cflags=["-DENABLE_PYBIND"],
+    )
 
-    header = lines[0].split(",")
+    print("Loading flash_attention module...")
+    flash_attention = load(
+        name="flash_attention",
+        sources=[
+            "src/flash_attention/flash_attention.cpp",
+            "src/flash_attention/flash_attention_kernel.cu",
+        ],
+        verbose=False,
+        with_cuda=True,
+        extra_cflags=["-DENABLE_PYBIND"],
+    )
 
-    results = {
-        "seq_lengths": [],
-        "std_times": [],
-        "flash_times": [],
-        "speedups": [],
-        "max_errors": [],
-        "mean_errors": [],
-    }
-
-    for i in range(1, len(lines)):
-        values = lines[i].split(",")
-        if len(values) < len(header):
-            continue  # Skip incomplete lines
-
-        results["seq_lengths"].append(int(values[0]))
-        results["std_times"].append(float(values[1]))
-        results["flash_times"].append(float(values[2]))
-        results["speedups"].append(float(values[3]))
-
-        if len(values) > 4 and "max_abs_error" in header:
-            max_error_idx = header.index("max_abs_error")
-            results["max_errors"].append(float(values[max_error_idx]))
-
-        if len(values) > 5 and "mean_abs_error" in header:
-            mean_error_idx = header.index("mean_abs_error")
-            results["mean_errors"].append(float(values[mean_error_idx]))
-
-    return results
+    return attention, flash_attention
 
 
-def run_benchmark(args: argparse.Namespace) -> Dict[str, List[Any]]:
-    """Run the C++ benchmark executable with given arguments."""
-    # Build command
-    cmd = [os.path.join(args.bin_dir, "benchmark")]
-
-    if args.batch_size:
-        cmd.extend(["--batch_size", str(args.batch_size)])
-
-    if args.num_heads:
-        cmd.extend(["--num_heads", str(args.num_heads)])
-
-    if args.head_dim:
-        cmd.extend(["--head_dim", str(args.head_dim)])
-
-    if args.num_runs:
-        cmd.extend(["--num_runs", str(args.num_runs)])
-
-    if args.seq_lengths:
-        cmd.extend(["--seq_lengths", args.seq_lengths])
-
-    if args.test_kernel_only:
-        cmd.append("--test_kernel_only")
-
-    if args.verify:
-        cmd.append("--verify")
-
-    # Always get CSV output for easier parsing
-    cmd.append("--csv")
-
-    # Run benchmark and capture output
-    print(f"Running: {' '.join(cmd)}")
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return parse_csv_output(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(f"Error running benchmark: {e}")
-        print(f"Stderr: {e.stderr}")
-        sys.exit(1)
+def torch_reference_attention(Q, K, V):
+    """
+    Reference PyTorch attention implementation for verification.
+    Uses standard scaled dot-product attention (without scaling for now).
+    """
+    # Q, K, V shape: (batch_heads, seq_len, head_dim)
+    # TODO: Add scaling factor 1/sqrt(head_dim)
+    scores = torch.matmul(Q, K.transpose(-2, -1))  # (batch_heads, seq_len, seq_len)
+    probs = F.softmax(scores, dim=-1)  # (batch_heads, seq_len, seq_len)
+    output = torch.matmul(probs, V)  # (batch_heads, seq_len, head_dim)
+    return output
 
 
-def plot_results(results: Dict[str, List[Any]], output_path: Optional[str] = None):
+def create_test_tensors(
+    batch_heads, seq_len, head_dim, device="cuda", dtype=torch.float32
+):
+    """Create random test tensors Q, K, V."""
+    return (
+        torch.randn(batch_heads, seq_len, head_dim, device=device, dtype=dtype),
+        torch.randn(batch_heads, seq_len, head_dim, device=device, dtype=dtype),
+        torch.randn(batch_heads, seq_len, head_dim, device=device, dtype=dtype),
+    )
+
+
+def benchmark_implementation(
+    impl_func, Q, K, V, num_runs=10, warmup_runs=3, name="Implementation"
+):
+    """Benchmark a single attention implementation."""
+    print(f"Benchmarking {name}...")
+
+    # Warmup runs
+    for _ in range(warmup_runs):
+        _ = impl_func(Q, K, V)
+        torch.cuda.synchronize()
+
+    # Actual timing
+    torch.cuda.synchronize()
+    start_time = time.time()
+
+    times = []
+    for run in range(num_runs):
+        start = time.time()
+        output = impl_func(Q, K, V)
+        torch.cuda.synchronize()
+        end = time.time()
+
+        run_time = (end - start) * 1000  # Convert to milliseconds
+        times.append(run_time)
+        print(f"  Run {run:2d}: {run_time:.3f} ms")
+
+    avg_time = sum(times) / len(times)
+    std_time = np.std(times)
+    min_time = min(times)
+    max_time = max(times)
+
+    print(f"  Average: {avg_time:.3f} ± {std_time:.3f} ms")
+    print(f"  Min/Max: {min_time:.3f} / {max_time:.3f} ms")
+
+    return avg_time, times, output
+
+
+def verify_implementations(attention_mod, flash_attention_mod, Q, K, V, tolerance=1e-4):
+    """Verify that all implementations produce similar results."""
+    print("\nRunning verification...")
+
+    # Get outputs from all implementations
+    torch_output = torch_reference_attention(Q, K, V)
+    attention_output = attention_mod.forward(Q, K, V)
+    flash_output = flash_attention_mod.forward(Q, K, V)
+
+    print(f"Output shapes:")
+    print(f"  PyTorch reference: {torch_output.shape}")
+    print(f"  Standard attention: {attention_output.shape}")
+    print(f"  Flash attention: {flash_output.shape}")
+
+    # Compare attention vs reference
+    attention_close = torch.allclose(
+        attention_output, torch_output, atol=tolerance, rtol=tolerance
+    )
+    if attention_close:
+        print("✓ Standard attention matches PyTorch reference")
+    else:
+        max_diff = torch.max(torch.abs(attention_output - torch_output)).item()
+        mean_diff = torch.mean(torch.abs(attention_output - torch_output)).item()
+        print(
+            f"✗ Standard attention differs from reference (max: {max_diff:.6f}, mean: {mean_diff:.6f})"
+        )
+
+    # Compare flash vs reference
+    flash_close = torch.allclose(
+        flash_output, torch_output, atol=tolerance, rtol=tolerance
+    )
+    if flash_close:
+        print("✓ Flash attention matches PyTorch reference")
+    else:
+        max_diff = torch.max(torch.abs(flash_output - torch_output)).item()
+        mean_diff = torch.mean(torch.abs(flash_output - torch_output)).item()
+        print(
+            f"✗ Flash attention differs from reference (max: {max_diff:.6f}, mean: {mean_diff:.6f})"
+        )
+
+    # Compare flash vs attention
+    flash_attention_close = torch.allclose(
+        flash_output, attention_output, atol=tolerance, rtol=tolerance
+    )
+    if flash_attention_close:
+        print("✓ Flash attention matches standard attention")
+    else:
+        max_diff = torch.max(torch.abs(flash_output - attention_output)).item()
+        mean_diff = torch.mean(torch.abs(flash_output - attention_output)).item()
+        print(
+            f"✗ Flash attention differs from standard attention (max: {max_diff:.6f}, mean: {mean_diff:.6f})"
+        )
+
+    return attention_close and flash_close and flash_attention_close
+
+
+def plot_results(results, output_path=None):
     """Plot benchmark results."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    implementations = list(results.keys())
+    avg_times = [results[impl]["avg_time"] for impl in implementations]
 
-    # Plot execution times
-    ax1.plot(
-        results["seq_lengths"], results["std_times"], "o-", label="Standard Attention"
-    )
-    ax1.plot(
-        results["seq_lengths"], results["flash_times"], "s-", label="Flash Attention"
-    )
-    ax1.set_xlabel("Sequence Length")
-    ax1.set_ylabel("Execution Time (ms)")
-    ax1.set_title("Attention Performance Comparison")
-    ax1.set_xscale("log", base=2)
-    ax1.set_yscale("log")
-    ax1.grid(True, which="both", ls="--", alpha=0.3)
-    ax1.legend()
+    plt.figure(figsize=(10, 6))
 
-    # Plot speedup
-    ax2.plot(results["seq_lengths"], results["speedups"], "D-", color="green")
-    ax2.set_xlabel("Sequence Length")
-    ax2.set_ylabel("Speedup (x)")
-    ax2.set_title("Flash Attention Speedup")
-    ax2.set_xscale("log", base=2)
-    ax2.grid(True, which="both", ls="--", alpha=0.3)
+    # Bar plot of average times
+    plt.subplot(1, 2, 1)
+    bars = plt.bar(implementations, avg_times)
+    plt.ylabel("Average Time (ms)")
+    plt.title("Attention Implementation Comparison")
+    plt.xticks(rotation=45)
+
+    # Add value labels on bars
+    for bar, time in zip(bars, avg_times):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + max(avg_times) * 0.01,
+            f"{time:.2f}ms",
+            ha="center",
+            va="bottom",
+        )
+
+    # Box plot showing distribution
+    plt.subplot(1, 2, 2)
+    times_data = [results[impl]["times"] for impl in implementations]
+    plt.boxplot(times_data, labels=implementations)
+    plt.ylabel("Time (ms)")
+    plt.title("Timing Distribution")
+    plt.xticks(rotation=45)
 
     plt.tight_layout()
 
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        print(f"Plot saved to: {output_path}")
+        print(f"Plot saved to {output_path}")
+    else:
+        plt.show()
+
+
+def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
+    """Run benchmarks across different sequence lengths."""
+    seq_lengths = [int(x) for x in args.seq_lengths.split(",")]
+    results = {
+        "seq_lengths": seq_lengths,
+        "torch_times": [],
+        "attention_times": [],
+        "flash_times": [],
+    }
+
+    print(f"\nRunning sequence length sweep: {seq_lengths}")
+
+    for seq_len in seq_lengths:
+        print(f"\n--- Sequence Length: {seq_len} ---")
+
+        Q, K, V = create_test_tensors(args.batch_heads, seq_len, args.head_dim)
+
+        # Benchmark each implementation
+        torch_time, _, _ = benchmark_implementation(
+            torch_reference_attention, Q, K, V, args.num_runs, name="PyTorch Reference"
+        )
+        attention_time, _, _ = benchmark_implementation(
+            attention_mod.forward, Q, K, V, args.num_runs, name="Standard Attention"
+        )
+        flash_time, _, _ = benchmark_implementation(
+            flash_attention_mod.forward, Q, K, V, args.num_runs, name="Flash Attention"
+        )
+
+        results["torch_times"].append(torch_time)
+        results["attention_times"].append(attention_time)
+        results["flash_times"].append(flash_time)
+
+    # Plot sequence length sweep results
+    plt.figure(figsize=(10, 6))
+    plt.plot(seq_lengths, results["torch_times"], "o-", label="PyTorch Reference")
+    plt.plot(seq_lengths, results["attention_times"], "s-", label="Standard Attention")
+    plt.plot(seq_lengths, results["flash_times"], "^-", label="Flash Attention")
+    plt.xlabel("Sequence Length")
+    plt.ylabel("Average Time (ms)")
+    plt.title("Attention Performance vs Sequence Length")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    if args.output:
+        sweep_path = args.output.replace(".png", "_sweep.png")
+        plt.savefig(sweep_path, dpi=300, bbox_inches="tight")
+        print(f"Sequence length sweep plot saved to {sweep_path}")
     else:
         plt.show()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run attention benchmarks")
+    parser = argparse.ArgumentParser(description="Benchmark attention implementations")
+
     parser.add_argument(
-        "--bin_dir",
-        type=str,
-        default="../build",
-        help="Directory containing the benchmark executable",
-    )
-    parser.add_argument("--batch_size", type=int, help="Batch size for the test")
-    parser.add_argument("--num_heads", type=int, help="Number of attention heads")
-    parser.add_argument("--head_dim", type=int, help="Dimension of each attention head")
-    parser.add_argument(
-        "--num_runs", type=int, help="Number of runs for each benchmark"
+        "--batch_heads",
+        type=int,
+        default=8,
+        help="Number of batch * heads (default: 8)",
     )
     parser.add_argument(
         "--seq_lengths",
         type=str,
-        help="Comma-separated list of sequence lengths to benchmark",
+        default="128",
+        help="Comma-separated list of sequence lengths (default: 128)",
     )
     parser.add_argument(
-        "--test_kernel_only",
-        action="store_true",
-        help="Only test the fill_ones kernel with a small matrix",
+        "--head_dim", type=int, default=64, help="Head dimension (default: 64)"
+    )
+    parser.add_argument(
+        "--num_runs",
+        type=int,
+        default=10,
+        help="Number of benchmark runs (default: 10)",
     )
     parser.add_argument(
         "--verify",
         action="store_true",
         help="Verify correctness between implementations",
     )
-    parser.add_argument("--output", type=str, help="Output path for the benchmark plot")
+    parser.add_argument("--output", type=str, help="Output path for benchmark plot")
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Run sequence length sweep instead of single benchmark",
+    )
+
     args = parser.parse_args()
 
-    if args.test_kernel_only:
-        # Just run the test and exit
-        subprocess.run([os.path.join(args.bin_dir, "benchmark"), "--test_kernel_only"])
-        return
+    # Check CUDA availability
+    if not torch.cuda.is_available():
+        print("Error: CUDA is not available")
+        return 1
 
-    # Run benchmark
-    results = run_benchmark(args)
+    print("Python Attention Benchmark")
+    print("=" * 30)
+    print(f"CUDA Device: {torch.cuda.get_device_name()}")
+    print(f"PyTorch Version: {torch.__version__}")
+    print()
 
-    # Plot results
-    plot_results(results, args.output)
+    # Load attention modules
+    try:
+        attention_mod, flash_attention_mod = load_attention_modules()
+        print("Successfully loaded attention modules\n")
+    except Exception as e:
+        print(f"Error loading attention modules: {e}")
+        return 1
 
-    # Print summary
-    print("\nSummary:")
-    print(
-        f"Maximum speedup: {max(results['speedups']):.2f}x at sequence length "
-        f"{results['seq_lengths'][results['speedups'].index(max(results['speedups']))]}"
-    )
+    if args.sweep:
+        run_sequence_length_sweep(attention_mod, flash_attention_mod, args)
+    else:
+        # Single benchmark run
+        seq_len = int(args.seq_lengths.split(",")[0])  # Use first sequence length
+
+        print(f"Configuration:")
+        print(f"  Batch * Heads: {args.batch_heads}")
+        print(f"  Sequence Length: {seq_len}")
+        print(f"  Head Dimension: {args.head_dim}")
+        print(f"  Number of Runs: {args.num_runs}")
+        print()
+
+        # Create test tensors
+        Q, K, V = create_test_tensors(args.batch_heads, seq_len, args.head_dim)
+        print(f"Created test tensors with shape: {Q.shape}")
+
+        # Verification
+        if args.verify:
+            verify_implementations(attention_mod, flash_attention_mod, Q, K, V)
+
+        # Benchmark all implementations
+        results = {}
+
+        torch_time, torch_times, _ = benchmark_implementation(
+            torch_reference_attention, Q, K, V, args.num_runs, name="PyTorch Reference"
+        )
+        results["PyTorch Reference"] = {"avg_time": torch_time, "times": torch_times}
+
+        attention_time, attention_times, _ = benchmark_implementation(
+            attention_mod.forward, Q, K, V, args.num_runs, name="Standard Attention"
+        )
+        results["Standard Attention"] = {
+            "avg_time": attention_time,
+            "times": attention_times,
+        }
+
+        flash_time, flash_times, _ = benchmark_implementation(
+            flash_attention_mod.forward, Q, K, V, args.num_runs, name="Flash Attention"
+        )
+        results["Flash Attention"] = {"avg_time": flash_time, "times": flash_times}
+
+        # Print summary
+        print(f"\n{'=' * 50}")
+        print("BENCHMARK SUMMARY")
+        print(f"{'=' * 50}")
+        for impl, data in results.items():
+            print(f"{impl:20s}: {data['avg_time']:8.3f} ms")
+
+        if attention_time > 0 and flash_time > 0:
+            speedup = attention_time / flash_time
+            print(f"{'Speedup (Flash/Std)':20s}: {speedup:8.2f}x")
+
+        # Plot results
+        if args.output or len(results) > 1:
+            plot_results(results, args.output)
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    exit(main())
