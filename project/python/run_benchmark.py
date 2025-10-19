@@ -190,7 +190,7 @@ def plot_results(results, output_path=None):
     # Box plot showing distribution
     plt.subplot(1, 2, 2)
     times_data = [results[impl]["times"] for impl in implementations]
-    plt.boxplot(times_data, labels=implementations)
+    plt.boxplot(times_data, tick_labels=implementations)
     plt.ylabel("Time (ms)")
     plt.title("Timing Distribution")
     plt.xticks(rotation=45)
