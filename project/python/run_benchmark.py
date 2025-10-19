@@ -267,8 +267,8 @@ def main():
     parser.add_argument(
         "--seq_lengths",
         type=str,
-        default="128",
-        help="Comma-separated list of sequence lengths (default: 128)",
+        default="1024",
+        help="Comma-separated list of sequence lengths (default: 1024)",
     )
     parser.add_argument(
         "--head_dim", type=int, default=64, help="Head dimension (default: 64)"
