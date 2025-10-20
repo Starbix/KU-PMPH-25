@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 #include <stdio.h>
 
+
 // Forward declarations of the existing flash attention kernels
 template<class ElTp, int T>
 __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N, int d,
@@ -10,28 +11,42 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N, int d
 // CUDA kernel launcher that interfaces with the torch wrapper
 cudaError_t launch_flash_attention_kernels(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
-    int batch_heads, int seq_len, int head_dim
+    int seq_len, int head_dim
 ) {
     // TODO
 
-    // Process each batch_head independently
-    for (int batch_head = 0; batch_head < batch_heads; batch_head++) {
-        // Calculate offsets for current batch_head
-        size_t offset = batch_head * seq_len * head_dim;
-        float* Q_batch = Q_ptr + offset;
-        float* K_batch = K_ptr + offset;
-        float* V_batch = V_ptr + offset;
-        float* O_batch = O_ptr + offset;
+    //get CUDA max shared memory per block
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    size_t maxSharedMemPerBlock = prop.sharedMemPerBlock;
 
-        // TODO: Replace this with actual flash attention algorithm
-        // Currently just copying V to O as a placeholder
-        cudaError_t err = cudaMemcpy(O_batch, V_batch,
-                                    seq_len * head_dim * sizeof(float),
-                                    cudaMemcpyDeviceToDevice);
-        if (err != cudaSuccess) {
-            return err;
-        }
+    // launch flash attention kernel
+    int M = maxSharedMemPerBlock / sizeof(float); // max elements in shared memory
+    // ceil(M/(4*head_dim))
+    int B_c = (M + 4*head_dim - 1) / (4*head_dim);
+    int B_r = std::min(B_c, head_dim);
+
+    int T_c = (seq_len + B_c - 1) / B_c;
+    int T_r = (seq_len + B_r - 1) / B_r;
+
+    dim3 blockDim(32, 32); // 1024 threads
+    dim3 gridDim(1, 1); // single block for now
+    size_t sharedMemSize = (B_c * head_dim + B_c * head_dim + B_r * head_dim + B_r * B_c) * sizeof(float);
+
+
+    if (sharedMemSize > maxSharedMemPerBlock) {
+        printf("Error: Shared memory size %zu exceeds maximum %zu\n", sharedMemSize, maxSharedMemPerBlock);
+        return cudaErrorInvalidValue;
     }
+
+    flash_attention<float, 32><<<gridDim, blockDim, sharedMemSize>>>(
+        Q_ptr, K_ptr, V_ptr, O_ptr, seq_len, head_dim,
+        nullptr, nullptr, // TODO
+        T_c, T_r, B_c, B_r
+    );
+
+
+
 
     return cudaSuccess;
 }

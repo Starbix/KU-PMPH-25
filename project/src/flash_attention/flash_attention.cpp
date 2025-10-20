@@ -4,7 +4,7 @@
 // Forward declaration of CUDA kernel launcher
 cudaError_t launch_flash_attention_kernels(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
-    int batch_heads, int seq_len, int head_dim
+    int seq_len, int head_dim
 );
 
 namespace flash_attention {
@@ -15,9 +15,9 @@ torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     TORCH_CHECK(K.defined(), "K tensor is not defined");
     TORCH_CHECK(V.defined(), "V tensor is not defined");
     
-    TORCH_CHECK(Q.dim() == 3, "Q must have 3 dimensions (batch_heads, seq_len, head_dim)");
-    TORCH_CHECK(K.dim() == 3, "K must have 3 dimensions (batch_heads, seq_len, head_dim)");
-    TORCH_CHECK(V.dim() == 3, "V must have 3 dimensions (batch_heads, seq_len, head_dim)");
+    TORCH_CHECK(Q.dim() == 2, "Q must have 2 dimensions (seq_len, head_dim)");
+    TORCH_CHECK(K.dim() == 2, "K must have 2 dimensions (seq_len, head_dim)");
+    TORCH_CHECK(V.dim() == 2, "V must have 2 dimensions (seq_len, head_dim)");
     
     TORCH_CHECK(Q.sizes() == K.sizes(), "Q and K must have the same shape");
     TORCH_CHECK(Q.sizes() == V.sizes(), "Q and V must have the same shape");
@@ -31,9 +31,8 @@ torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     TORCH_CHECK(V.dtype() == torch::kFloat32, "V must be float32");
     
     // Get dimensions
-    int batch_heads = Q.size(0);
-    int seq_len = Q.size(1);
-    int head_dim = Q.size(2);
+    int seq_len = Q.size(0);
+    int head_dim = Q.size(1);
     
     // Ensure tensors are contiguous
     Q = Q.contiguous();
@@ -52,7 +51,7 @@ torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     // Launch CUDA kernels
     cudaError_t err = launch_flash_attention_kernels(
         Q_ptr, K_ptr, V_ptr, O_ptr,
-        batch_heads, seq_len, head_dim
+        seq_len, head_dim
     );
     
     TORCH_CHECK(err == cudaSuccess, "CUDA kernel launch failed: ", cudaGetErrorString(err));

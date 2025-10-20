@@ -51,22 +51,20 @@ def torch_reference_attention(Q, K, V):
     Reference PyTorch attention implementation for verification.
     Uses standard scaled dot-product attention (without scaling for now).
     """
-    # Q, K, V shape: (batch_heads, seq_len, head_dim)
+    # Q, K, V shape: (seq_len, head_dim)
     # TODO: Add scaling factor 1/sqrt(head_dim)
-    scores = torch.matmul(Q, K.transpose(-2, -1))  # (batch_heads, seq_len, seq_len)
-    probs = F.softmax(scores, dim=-1)  # (batch_heads, seq_len, seq_len)
-    output = torch.matmul(probs, V)  # (batch_heads, seq_len, head_dim)
+    scores = torch.matmul(Q, K.transpose(-2, -1))  # (seq_len, seq_len)
+    probs = F.softmax(scores, dim=-1)  # (seq_len, seq_len)
+    output = torch.matmul(probs, V)  # (seq_len, head_dim)
     return output
 
 
-def create_test_tensors(
-    batch_heads, seq_len, head_dim, device="cuda", dtype=torch.float32
-):
+def create_test_tensors(seq_len, head_dim, device="cuda", dtype=torch.float32):
     """Create random test tensors Q, K, V."""
     return (
-        torch.randn(batch_heads, seq_len, head_dim, device=device, dtype=dtype),
-        torch.randn(batch_heads, seq_len, head_dim, device=device, dtype=dtype),
-        torch.randn(batch_heads, seq_len, head_dim, device=device, dtype=dtype),
+        torch.randn(seq_len, head_dim, device=device, dtype=dtype),
+        torch.randn(seq_len, head_dim, device=device, dtype=dtype),
+        torch.randn(seq_len, head_dim, device=device, dtype=dtype),
     )
 
 
@@ -219,7 +217,7 @@ def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
     for seq_len in seq_lengths:
         print(f"\n--- Sequence Length: {seq_len} ---")
 
-        Q, K, V = create_test_tensors(args.batch_heads, seq_len, args.head_dim)
+        Q, K, V = create_test_tensors(seq_len, args.head_dim)
 
         # Benchmark each implementation
         torch_time, _, _ = benchmark_implementation(
@@ -258,12 +256,6 @@ def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
 def main():
     parser = argparse.ArgumentParser(description="Benchmark attention implementations")
 
-    parser.add_argument(
-        "--batch_heads",
-        type=int,
-        default=8,
-        help="Number of batch * heads (default: 8)",
-    )
     parser.add_argument(
         "--seq_lengths",
         type=str,
@@ -319,14 +311,13 @@ def main():
         seq_len = int(args.seq_lengths.split(",")[0])  # Use first sequence length
 
         print(f"Configuration:")
-        print(f"  Batch * Heads: {args.batch_heads}")
         print(f"  Sequence Length: {seq_len}")
         print(f"  Head Dimension: {args.head_dim}")
         print(f"  Number of Runs: {args.num_runs}")
         print()
 
         # Create test tensors
-        Q, K, V = create_test_tensors(args.batch_heads, seq_len, args.head_dim)
+        Q, K, V = create_test_tensors(seq_len, args.head_dim)
         print(f"Created test tensors with shape: {Q.shape}")
 
         # Verification

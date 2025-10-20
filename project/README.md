@@ -54,10 +54,10 @@ This will compile the CUDA code and create the Python bindings.
 Running the benchmarks:
 ```bash
 # From the project root directory, using C++ executable directly
-./build/benchmark --batch_size 2 --num_heads 8 --head_dim 64 --verify
+./build/benchmark --num_heads 8 --head_dim 64 --verify
 
 # Or using the Python script for visualization (recommended for plots)
-python3 python/run_benchmark.py --batch_size 2 --num_heads 8 --verify --output benchmark_results.png
+python3 python/run_benchmark.py --num_heads 8 --verify --output benchmark_results.png
 ```
 
 ### Benchmarking Options
@@ -66,7 +66,6 @@ python3 python/run_benchmark.py --batch_size 2 --num_heads 8 --verify --output b
 ```
 Usage: benchmark [options]
 Options:
-  --batch_size <size>       Batch size for the test (default: 2)
   --num_heads <num>         Number of attention heads (default: 8)
   --head_dim <dim>          Dimension of each attention head (default: 64)
   --num_runs <runs>         Number of runs for each benchmark (default: 10)
@@ -80,7 +79,7 @@ Options:
 
 #### Python Visualization Script
 ```
-usage: run_benchmark.py [-h] [--bin_dir BIN_DIR] [--batch_size BATCH_SIZE] [--num_heads NUM_HEADS]
+usage: run_benchmark.py [-h] [--bin_dir BIN_DIR] [--num_heads NUM_HEADS]
                         [--head_dim HEAD_DIM] [--num_runs NUM_RUNS] [--seq_lengths SEQ_LENGTHS]
                         [--test_kernel_only] [--verify] [--output OUTPUT]
 
@@ -89,8 +88,6 @@ Run attention benchmarks
 optional arguments:
   -h, --help            show this help message and exit
   --bin_dir BIN_DIR     Directory containing the benchmark executable
-  --batch_size BATCH_SIZE
-                        Batch size for the test
   --num_heads NUM_HEADS
                         Number of attention heads
   --head_dim HEAD_DIM   Dimension of each attention head

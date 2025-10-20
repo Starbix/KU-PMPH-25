@@ -141,7 +141,7 @@ __global__ void compute_P_shared_mem(ElTp* S, ElTp* P, int N) {
     __syncthreads();
 
     // write local norm to scratch
-    scratch[tid] = thread_norm * exp(thread_norm - row_max);
+    scratch[tid] = thread_norm * exp(thread_max - row_max);
     __syncthreads();
 
     // reduce norm over threads
@@ -172,7 +172,7 @@ __global__ void compute_O(ElTp* V, ElTp* P, int N, int d, ElTp* O) {
     int col = blockIdx.x * T + threadIdx.x;
 
     ElTp o = 0.0;
-    for (int kk = 0; kk < d; kk += T) {
+    for (int kk = 0; kk < N; kk += T) {
         // load P and V by blocks from global memory
         P_block[threadIdx.y][threadIdx.x] = (row < N && kk + threadIdx.x < N) ?
                                             P[row*N + kk + threadIdx.x] : 0.0;

@@ -21,18 +21,16 @@ int gpuAssert(cudaError_t code) {
 #include "../include/flash_attention.h"
 
 struct BenchmarkConfig {
-    int batch_heads = 8;
     int seq_len = 128;
     int head_dim = 64;
     int num_runs = 10;
-    bool verify = false;
+    bool verify = true; // verify by default
     bool verbose = false;
 };
 
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [options]\n";
     std::cout << "Options:\n";
-    std::cout << "  --batch_heads N    Number of batch * heads (default: 8)\n";
     std::cout << "  --seq_len N        Sequence length (default: 128)\n";
     std::cout << "  --head_dim N       Head dimension (default: 64)\n";
     std::cout << "  --num_runs N       Number of benchmark runs (default: 10)\n";
@@ -49,8 +47,6 @@ bool parse_args(int argc, char** argv, BenchmarkConfig& config) {
         if (arg == "--help") {
             print_usage(argv[0]);
             return false;
-        } else if (arg == "--batch_heads" && i + 1 < argc) {
-            config.batch_heads = std::atoi(argv[++i]);
         } else if (arg == "--seq_len" && i + 1 < argc) {
             config.seq_len = std::atoi(argv[++i]);
         } else if (arg == "--head_dim" && i + 1 < argc) {
@@ -69,7 +65,7 @@ bool parse_args(int argc, char** argv, BenchmarkConfig& config) {
     }
 
     // Basic validation
-    if (config.batch_heads <= 0 || config.seq_len <= 0 || config.head_dim <= 0 || config.num_runs <= 0) {
+    if (config.seq_len <= 0 || config.head_dim <= 0 || config.num_runs <= 0) {
         std::cerr << "Error: All dimensions and num_runs must be positive" << std::endl;
         return false;
     }
@@ -77,13 +73,13 @@ bool parse_args(int argc, char** argv, BenchmarkConfig& config) {
     return true;
 }
 
-torch::Tensor create_random_tensor(int batch_heads, int seq_len, int head_dim) {
+torch::Tensor create_random_tensor(int seq_len, int head_dim) {
     auto options = torch::TensorOptions()
         .dtype(torch::kFloat32)
         .device(torch::kCUDA)
         .requires_grad(false);
 
-    return torch::randn({batch_heads, seq_len, head_dim}, options);
+    return torch::randn({seq_len, head_dim}, options);
 }
 
 double benchmark_implementation(
@@ -120,14 +116,13 @@ double benchmark_implementation(
     for (double time : times) {
         total += time;
     }
-
     return total / num_runs;
 }
 
 torch::Tensor torch_reference_attention(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     // Reference PyTorch attention implementation
     // TODO: Add scaling factor 1/sqrt(head_dim)
-    auto scores = torch::matmul(Q, K.transpose(-2, -1));
+    auto scores = torch::matmul(Q, K.t());
     auto probs = torch::softmax(scores, -1);
     auto output = torch::matmul(probs, V);
     return output;
@@ -170,7 +165,6 @@ int main(int argc, char** argv) {
     std::cout << "Attention Implementations Benchmark" << std::endl;
     std::cout << "====================================" << std::endl;
     std::cout << "Configuration:" << std::endl;
-    std::cout << "  Batch * Heads: " << config.batch_heads << std::endl;
     std::cout << "  Sequence Length: " << config.seq_len << std::endl;
     std::cout << "  Head Dimension: " << config.head_dim << std::endl;
     std::cout << "  Number of Runs: " << config.num_runs << std::endl;
@@ -179,12 +173,11 @@ int main(int argc, char** argv) {
 
     // Create input tensors
     std::cout << "Creating input tensors..." << std::endl;
-    auto Q = create_random_tensor(config.batch_heads, config.seq_len, config.head_dim);
-    auto K = create_random_tensor(config.batch_heads, config.seq_len, config.head_dim);
-    auto V = create_random_tensor(config.batch_heads, config.seq_len, config.head_dim);
+    auto Q = create_random_tensor(config.seq_len, config.head_dim);
+    auto K = create_random_tensor(config.seq_len, config.head_dim);
+    auto V = create_random_tensor(config.seq_len, config.head_dim);
 
-    std::cout << "Input tensor shape: [" << config.batch_heads << ", "
-              << config.seq_len << ", " << config.head_dim << "]" << std::endl;
+    std::cout << "Input tensor shape: [" << config.seq_len << ", " << config.head_dim << "]" << std::endl;
     std::cout << std::endl;
 
     // Benchmark PyTorch reference
