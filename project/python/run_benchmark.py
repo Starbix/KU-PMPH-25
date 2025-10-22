@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch.utils.cpp_extension import load
 import matplotlib.pyplot as plt
 import numpy as np
+from torch.autograd import profiler
 
 # Set CUDA architecture for compilation
 os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
@@ -28,7 +29,7 @@ def load_attention_modules():
         ],
         verbose=False,
         with_cuda=True,
-        extra_cflags=["-DENABLE_PYBIND"],
+        extra_cflags=["-DENABLE_PYBIND -O3"],
     )
 
     print("Loading flash_attention module...")
@@ -40,7 +41,7 @@ def load_attention_modules():
         ],
         verbose=False,
         with_cuda=True,
-        extra_cflags=["-DENABLE_PYBIND"],
+        extra_cflags=["-DENABLE_PYBIND -O3"],
     )
 
     return attention, flash_attention
@@ -69,7 +70,15 @@ def create_test_tensors(seq_len, head_dim, device="cuda", dtype=torch.float32):
 
 
 def benchmark_implementation(
-    impl_func, Q, K, V, num_runs=10, warmup_runs=3, name="Implementation"
+    impl_func,
+    Q,
+    K,
+    V,
+    num_runs=10,
+    warmup_runs=3,
+    name="Implementation",
+    enable_profiler=False,
+    enable_memory_tracking=False,
 ):
     """Benchmark a single attention implementation."""
     print(f"Benchmarking {name}...")
@@ -81,14 +90,34 @@ def benchmark_implementation(
 
     # Actual timing
     torch.cuda.synchronize()
-    start_time = time.time()
 
     times = []
+    prof_trace = None
+
     for run in range(num_runs):
-        start = time.time()
-        output = impl_func(Q, K, V)
-        torch.cuda.synchronize()
-        end = time.time()
+        if enable_profiler and run == 0:  # Profile only the first run
+            with profiler.profile(use_cuda=True, record_shapes=True) as prof:
+                start = time.time()
+                output = impl_func(Q, K, V)
+                torch.cuda.synchronize()
+                end = time.time()
+            prof_trace = prof
+        elif enable_memory_tracking and run == 0:  # Memory tracking on first run
+            torch.cuda.reset_peak_memory_stats()
+            start = time.time()
+            output = impl_func(Q, K, V)
+            torch.cuda.synchronize()
+            end = time.time()
+
+            # Print memory stats
+            print(f"  Current memory usage: {torch.cuda.memory_usage() / 1e6:.2f} MB")
+            print(f"  Peak memory allocated: {torch.cuda.max_memory_allocated() / 1e6:.2f} MB")
+            print(f"  Peak memory reserved: {torch.cuda.max_memory_reserved() / 1e6:.2f} MB")
+        else:
+            start = time.time()
+            output = impl_func(Q, K, V)
+            torch.cuda.synchronize()
+            end = time.time()
 
         run_time = (end - start) * 1000  # Convert to milliseconds
         times.append(run_time)
@@ -102,7 +131,51 @@ def benchmark_implementation(
     print(f"  Average: {avg_time:.3f} ± {std_time:.3f} ms")
     print(f"  Min/Max: {min_time:.3f} / {max_time:.3f} ms")
 
+    # Print profiler statistics if enabled
+    if enable_profiler and prof_trace is not None:
+        print(f"  Profiler summary for {name}:")
+        print(prof_trace.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+
     return avg_time, times, output
+
+
+
+
+def profile_implementation_detailed(impl_func, Q, K, V, name="Implementation", enable_memory_tracking=False):
+    """Run detailed profiling analysis for a single implementation."""
+    print(f"\nDetailed profiling for {name}...")
+
+    # Warmup
+    for _ in range(3):
+        _ = impl_func(Q, K, V)
+        torch.cuda.synchronize()
+
+    # Profile with detailed settings
+    if enable_memory_tracking:
+        torch.cuda.reset_peak_memory_stats()
+
+    with profiler.profile(use_cuda=True, record_shapes=True) as prof:
+        output = impl_func(Q, K, V)
+        torch.cuda.synchronize()
+
+    if enable_memory_tracking:
+        print(f"Current memory usage: {torch.cuda.memory_usage() / 1e6:.2f} MB")
+        print(f"Peak memory allocated: {torch.cuda.max_memory_allocated() / 1e6:.2f} MB")
+        print(f"Peak memory reserved: {torch.cuda.max_memory_reserved() / 1e6:.2f} MB")
+
+    # Print detailed profiler information
+    print(f"\nProfiler Results for {name}:")
+    print("=" * 80)
+
+    # CUDA time breakdown
+    print("\nTop 15 operations by CUDA time:")
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+
+    # CPU time breakdown
+    print("\nTop 10 operations by CPU time:")
+    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+
+    return output, prof
 
 
 def verify_implementations(attention_mod, flash_attention_mod, Q, K, V, tolerance=1e-4):
@@ -221,13 +294,34 @@ def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
 
         # Benchmark each implementation
         torch_time, _, _ = benchmark_implementation(
-            torch_reference_attention, Q, K, V, args.num_runs, name="PyTorch Reference"
+            torch_reference_attention,
+            Q,
+            K,
+            V,
+            args.num_runs,
+            name="PyTorch Reference",
+            enable_profiler=args.profile,
+            enable_memory_tracking=args.memory,
         )
         attention_time, _, _ = benchmark_implementation(
-            attention_mod.forward, Q, K, V, args.num_runs, name="Standard Attention"
+            attention_mod.forward,
+            Q,
+            K,
+            V,
+            args.num_runs,
+            name="Standard Attention",
+            enable_profiler=args.profile,
+            enable_memory_tracking=args.memory,
         )
         flash_time, _, _ = benchmark_implementation(
-            flash_attention_mod.forward, Q, K, V, args.num_runs, name="Flash Attention"
+            flash_attention_mod.forward,
+            Q,
+            K,
+            V,
+            args.num_runs,
+            name="Flash Attention",
+            enable_profiler=args.profile,
+            enable_memory_tracking=args.memory,
         )
 
         results["torch_times"].append(torch_time)
@@ -282,6 +376,27 @@ def main():
         action="store_true",
         help="Run sequence length sweep instead of single benchmark",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable CUDA profiling with torch.autograd.profiler",
+    )
+    parser.add_argument(
+        "--profile_output",
+        type=str,
+        default="./profiler_traces",
+        help="Output directory for profiler traces (default: ./profiler_traces)",
+    )
+    parser.add_argument(
+        "--profile_only",
+        action="store_true",
+        help="Run detailed profiling analysis only (no benchmarking)",
+    )
+    parser.add_argument(
+        "--memory",
+        action="store_true",
+        help="Enable CUDA memory tracking and snapshot generation",
+    )
 
     args = parser.parse_args()
 
@@ -314,6 +429,10 @@ def main():
         print(f"  Sequence Length: {seq_len}")
         print(f"  Head Dimension: {args.head_dim}")
         print(f"  Number of Runs: {args.num_runs}")
+        print(
+            f"  Profiling: {'Enabled' if args.profile or args.profile_only else 'Disabled'}"
+        )
+        print(f"  Memory Tracking: {'Enabled' if args.memory else 'Disabled'}")
         print()
 
         # Create test tensors
@@ -324,41 +443,94 @@ def main():
         if args.verify:
             verify_implementations(attention_mod, flash_attention_mod, Q, K, V)
 
-        # Benchmark all implementations
-        results = {}
+        if args.profile_only:
+            # Run detailed profiling analysis only
+            print("\nRunning detailed profiling analysis...")
+            profile_implementation_detailed(
+                torch_reference_attention,
+                Q,
+                K,
+                V,
+                "PyTorch Reference",
+                enable_memory_tracking=args.memory,
+            )
+            profile_implementation_detailed(
+                attention_mod.forward,
+                Q,
+                K,
+                V,
+                "Standard Attention",
+                enable_memory_tracking=args.memory,
+            )
+            profile_implementation_detailed(
+                flash_attention_mod.forward,
+                Q,
+                K,
+                V,
+                "Flash Attention",
+                enable_memory_tracking=args.memory,
+            )
+            print("\nDetailed profiling completed.")
+        else:
+            # Benchmark all implementations
+            results = {}
 
-        torch_time, torch_times, _ = benchmark_implementation(
-            torch_reference_attention, Q, K, V, args.num_runs, name="PyTorch Reference"
-        )
-        results["PyTorch Reference"] = {"avg_time": torch_time, "times": torch_times}
+            torch_time, torch_times, _ = benchmark_implementation(
+                torch_reference_attention,
+                Q,
+                K,
+                V,
+                args.num_runs,
+                name="PyTorch Reference",
+                enable_profiler=args.profile,
+                enable_memory_tracking=args.memory,
+            )
+            results["PyTorch Reference"] = {
+                "avg_time": torch_time,
+                "times": torch_times,
+            }
 
-        attention_time, attention_times, _ = benchmark_implementation(
-            attention_mod.forward, Q, K, V, args.num_runs, name="Standard Attention"
-        )
-        results["Standard Attention"] = {
-            "avg_time": attention_time,
-            "times": attention_times,
-        }
+            attention_time, attention_times, _ = benchmark_implementation(
+                attention_mod.forward,
+                Q,
+                K,
+                V,
+                args.num_runs,
+                name="Standard Attention",
+                enable_profiler=args.profile,
+                enable_memory_tracking=args.memory,
+            )
+            results["Standard Attention"] = {
+                "avg_time": attention_time,
+                "times": attention_times,
+            }
 
-        flash_time, flash_times, _ = benchmark_implementation(
-            flash_attention_mod.forward, Q, K, V, args.num_runs, name="Flash Attention"
-        )
-        results["Flash Attention"] = {"avg_time": flash_time, "times": flash_times}
+            flash_time, flash_times, _ = benchmark_implementation(
+                flash_attention_mod.forward,
+                Q,
+                K,
+                V,
+                args.num_runs,
+                name="Flash Attention",
+                enable_profiler=args.profile,
+                enable_memory_tracking=args.memory,
+            )
+            results["Flash Attention"] = {"avg_time": flash_time, "times": flash_times}
 
-        # Print summary
-        print(f"\n{'=' * 50}")
-        print("BENCHMARK SUMMARY")
-        print(f"{'=' * 50}")
-        for impl, data in results.items():
-            print(f"{impl:20s}: {data['avg_time']:8.3f} ms")
+            # Print summary
+            print(f"\n{'=' * 50}")
+            print("BENCHMARK SUMMARY")
+            print(f"{'=' * 50}")
+            for impl, data in results.items():
+                print(f"{impl:20s}: {data['avg_time']:8.3f} ms")
 
-        if attention_time > 0 and flash_time > 0:
-            speedup = attention_time / flash_time
-            print(f"{'Speedup (Flash/Std)':20s}: {speedup:8.2f}x")
+            if attention_time > 0 and flash_time > 0:
+                speedup = attention_time / flash_time
+                print(f"{'Speedup (Flash/Std)':20s}: {speedup:8.2f}x")
 
-        # Plot results
-        if args.output or len(results) > 1:
-            plot_results(results, args.output)
+            # Plot results
+            if args.output or len(results) > 1:
+                plot_results(results, args.output)
 
     return 0
 
