@@ -14,7 +14,6 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N, int d
 
 
 // CUDA kernel launcher that interfaces with the torch wrapper
-template<class ElTp>
 cudaError_t launch_flash_attention_kernels(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
     int seq_len, int head_dim
@@ -46,18 +45,18 @@ cudaError_t launch_flash_attention_kernels(
     }
 
     // initialize l and m
-    ElTp* l;
-    ElTp* m;
-    cudaMalloc(&l, seq_len * sizeof(ElTp));
-    cudaMalloc(&m, seq_len * sizeof(ElTp));
-    int B = 256,  num_blocks = CEIL_DIV(seq_len, B);
-    dim3 block(B, 1, 1), grid(num_blocks, 1, 1);
-    init_l<<<grid, block>>>(l, seq_len);
-    init_m<<<grid, block>>>(m, seq_len);
+    // ElTp* l;
+    // ElTp* m;
+    // cudaMalloc(&l, seq_len * sizeof(ElTp));
+    // cudaMalloc(&m, seq_len * sizeof(ElTp));
+    // int B = 256,  num_blocks = CEIL_DIV(seq_len, B);
+    // dim3 block(B, 1, 1), grid(num_blocks, 1, 1);
+    // init_l<<<grid, block>>>(l, seq_len);
+    // init_m<<<grid, block>>>(m, seq_len);
 
     flash_attention<float, 32><<<gridDim, blockDim, sharedMemSize>>>(
         Q_ptr, K_ptr, V_ptr, O_ptr, seq_len, head_dim,
-        l, m, 
+        nullptr, nullptr,
         T_c, T_r, B_c, B_r
     );
 
