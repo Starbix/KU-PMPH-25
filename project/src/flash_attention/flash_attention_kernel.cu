@@ -2,13 +2,18 @@
 #include <stdio.h>
 
 
+#define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
+
 // Forward declarations of the existing flash attention kernels
 template<class ElTp, int T>
 __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N, int d,
                                 ElTp* l, ElTp* m,
                                int T_c, int T_r, int B_c, int B_r);
 
+
+
 // CUDA kernel launcher that interfaces with the torch wrapper
+template<class ElTp>
 cudaError_t launch_flash_attention_kernels(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
     int seq_len, int head_dim
@@ -39,9 +44,19 @@ cudaError_t launch_flash_attention_kernels(
         return cudaErrorInvalidValue;
     }
 
+    // initialize l and m
+    ElTp* l;
+    ElTp* m;
+    cudaMalloc(&l, seq_len * sizeof(ElTp));
+    cudaMalloc(&m, seq_len * sizeof(ElTp));
+    int B = 256,  num_blocks = CEIL_DIV(seq_len, B);
+    dim3 block(B, 1, 1), grid(num_blocks, 1, 1);
+    init_l<<<grid, block>>>(l, seq_len);
+    init_m<<<grid, block>>>(m, seq_len);
+
     flash_attention<float, 32><<<gridDim, blockDim, sharedMemSize>>>(
         Q_ptr, K_ptr, V_ptr, O_ptr, seq_len, head_dim,
-        nullptr, nullptr, // TODO
+        l, m, 
         T_c, T_r, B_c, B_r
     );
 
@@ -50,6 +65,24 @@ cudaError_t launch_flash_attention_kernels(
 
     return cudaSuccess;
 }
+
+
+template<class ElTp>
+__global__ void init_l(ElTp* l, int N) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) {
+        l[idx] = 0.f;
+    }
+}
+
+template<class ElTp>
+__global__ void init_m(ElTp* m, int N) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) {
+        m[idx] = -INFINITY;
+    }
+}
+
 
 /*
  * Original flash attention kernel implementation
@@ -84,12 +117,17 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N, int d
     // external so we can manage size outside kernel
     // size = (B_c*d + B_c*d + B_r*d + B_r*B_c)*sizeof(ElTp)
     // maxes out SRAM
-    extern __shared__ float shared[];
-    // assume O is initialized to zero
-    ElTp* K_j = shared;         // [B_c][d]
-    ElTp* V_j = &K_j[B_c*d];    // [B_c][d]
-    ElTp* Q_i = &V_j[B_c*d];    // [B_r][d], make sure S_ij also fits
-    ElTp* S_ij = &Q_i[B_r*d];   // [B_r][B_c]
+    extern __shared__ ElTp shared[];
+    ElTp* Q_i = shared;
+    ElTp* K_j = Q_i + B_r * d;
+    ElTp* V_j = K_j + B_c * d;
+    ElTp* S_ij = V_j + B_c * d;
+    ElTp* O_i = S_ij + B_r * B_c;
+    ElTp* l_i = O_i + B_r * d;
+    ElTp* l_i_new = l_i + B_r;
+    ElTp* m_i = l_i_new + B_r;
+    ElTp* m_i_new = m_i + B_r;
+    ElTp* m_ij_dash = m_i_new + B_r;
 
     for (int j=0; j<T_c; j++){
         // load K_j, V_j
