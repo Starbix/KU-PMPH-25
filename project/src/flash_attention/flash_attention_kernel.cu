@@ -45,7 +45,7 @@ cudaError_t launch_flash_attention_kernels(
     int T_c = CEIL_DIV(seq_len, B_c);
     int T_r = CEIL_DIV(seq_len, B_r);
 
-    int bdim_x = 32;
+    int bdim_x = 48;
     int bdim_y = 16;
 
     dim3 blockDim(bdim_x, bdim_y);
@@ -70,6 +70,7 @@ cudaError_t launch_flash_attention_kernels(
     INSTANTIATE_KERNEL(64, 32, 32, 32, 16)
     INSTANTIATE_KERNEL(64, 24, 24, 32, 16)
     INSTANTIATE_KERNEL(64, 16, 16, 32, 16)
+    INSTANTIATE_KERNEL(64, 48, 48, 48, 16)
 
     // Head dimension 128
     INSTANTIATE_KERNEL(128, 32, 32, 32, 16)
@@ -220,7 +221,6 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
                 Q_i[row*d + col] = Q[global_row*d + col]; // coalesced cuz + tid_x
             }
         } else {
-            // pad with zeros
             #pragma unroll
             for (int col=tid_x; col<d; col+=bdim_x){
                 Q_i[row*d + col] = 0.f;
@@ -248,7 +248,6 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
                     V_j[row*d + col] = V[global_row*d + col];
                 }
             } else {
-                // pad with zeros
                 #pragma unroll
                 for (int col=tid_x;col<d; col+=bdim_x){
                     K_j[row*d + col] = 0.f;
@@ -429,6 +428,8 @@ template __global__ void flash_attention<float, 48, 48, 64, 32, 16>(float*, floa
 template __global__ void flash_attention<float, 32, 32, 64, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 template __global__ void flash_attention<float, 24, 24, 64, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 template __global__ void flash_attention<float, 16, 16, 64, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
+template __global__ void flash_attention<float, 48, 48, 64, 48, 16>(float*, float*, float*, float*, int, float*, float*, int);
+
 
 // Head dimension 128
 template __global__ void flash_attention<float, 32, 32, 128, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
