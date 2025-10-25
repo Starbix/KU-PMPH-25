@@ -39,8 +39,8 @@ cudaError_t launch_flash_attention_kernels(
     // ceil(M/(4*head_dim))
     int B_c = std::min(CEIL_DIV(M, 4*head_dim), seq_len);
     int B_r = std::min(B_c, head_dim);
-    B_c = 32;
-    B_r = 32;
+    // B_c = 32;
+    // B_r = 32;
 
     int T_c = CEIL_DIV(seq_len, B_c);
     int T_r = CEIL_DIV(seq_len, B_r);
@@ -86,6 +86,7 @@ cudaError_t launch_flash_attention_kernels(
     INSTANTIATE_KERNEL(32, 64, 32, 32, 16)
     INSTANTIATE_KERNEL(32, 48, 32, 32, 16)
     INSTANTIATE_KERNEL(32, 32, 32, 32, 16)
+    INSTANTIATE_KERNEL(32, 96, 32, 32, 16)
 
     // If no predefined configuration matches, report error with helpful suggestion
     printf("Error: Unsupported configuration - head_dim=%d, B_c=%d, B_r=%d, bdim_x=%d, bdim_y=%d\n",
@@ -151,7 +152,8 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
     const int tid_y = threadIdx.y;
     // const int bdim_x = blockDim.x;
     // const int bdim_y = blockDim.y;
-    if (DEBUG&&tid_x==0&& tid_y==0){
+    if (tid_x==0&& tid_y==0 && blockIdx.x==0){
+        printf("B_c: %d, B_r: %d, d: %d\n", B_c, B_r, d);
         printf("bdim_x: %d, bdim_y: %d\n", bdim_x, bdim_y);
         printf("blockIdx.x: %d, blockIdx.y: %d\n", blockIdx.x, blockIdx.y);
     }
@@ -217,7 +219,14 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
             for (int col=tid_x; col<d; col+=bdim_x){
                 Q_i[row*d + col] = Q[global_row*d + col]; // coalesced cuz + tid_x
             }
+        } else {
+            // pad with zeros
+            #pragma unroll
+            for (int col=tid_x; col<d; col+=bdim_x){
+                Q_i[row*d + col] = 0.f;
+            }
         }
+
     }
     // no need to load O_i as we initialize to zero in kernel,
     // because we iterate over i=0..T_r and each block handles one i block
@@ -237,6 +246,13 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
                     //TODO: handle non-divisible d
                     K_j[row*d + col] = K[global_row*d + col]; // coalesced cuz + tid_x
                     V_j[row*d + col] = V[global_row*d + col];
+                }
+            } else {
+                // pad with zeros
+                #pragma unroll
+                for (int col=tid_x;col<d; col+=bdim_x){
+                    K_j[row*d + col] = 0.f;
+                    V_j[row*d + col] = 0.f;
                 }
             }
         }
@@ -388,12 +404,12 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
 
     // here we write back
     #pragma unroll
-    for (int row=tid_y; row<B_r; row+=blockDim.y){
+    for (int row=tid_y; row<B_r; row+=bdim_y){
         int global_row = row + blockIdx.x * B_r;
         if (global_row < N){
             // write O_i
             #pragma unroll
-            for (int col=tid_x; col<d; col+=blockDim.x){
+            for (int col=tid_x; col<d; col+=bdim_x){
                 // normalize with l_i
                 const int reg_row = row / bdim_y;
                 O[global_row*d + col] = O_i[reg_row][col / bdim_x] / l_i[reg_row];
