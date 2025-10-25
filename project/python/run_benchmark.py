@@ -69,13 +69,34 @@ def create_test_tensors(seq_len, head_dim, device="cuda", dtype=torch.float32):
     )
 
 
+def create_known_test_tensors(seq_len, head_dim, device="cuda", dtype=torch.float32):
+    print("Creating known test tensors for verification...")
+    q = torch.triu(torch.ones(seq_len, head_dim)).cuda()
+    k = torch.tensor(
+        [
+            [i + j if (i + j) % 2 == 0 else -(i + j) for j in range(head_dim)]
+            for i in range(seq_len)
+        ],
+        dtype=torch.float32,
+    ).cuda()
+    v = torch.ones(seq_len, head_dim, device=device, dtype=dtype)
+    print("q:", q)
+    print("k:", k)
+    print("v:", v)
+    return (
+        q,
+        k,
+        v,
+    )
+
+
 def benchmark_implementation(
     impl_func,
     Q,
     K,
     V,
     num_runs=10,
-    warmup_runs=3,
+    warmup_runs=0,
     name="Implementation",
     enable_profiler=False,
     enable_memory_tracking=False,
@@ -111,8 +132,12 @@ def benchmark_implementation(
 
             # Print memory stats
             print(f"  Current memory usage: {torch.cuda.memory_usage() / 1e6:.2f} MB")
-            print(f"  Peak memory allocated: {torch.cuda.max_memory_allocated() / 1e6:.2f} MB")
-            print(f"  Peak memory reserved: {torch.cuda.max_memory_reserved() / 1e6:.2f} MB")
+            print(
+                f"  Peak memory allocated: {torch.cuda.max_memory_allocated() / 1e6:.2f} MB"
+            )
+            print(
+                f"  Peak memory reserved: {torch.cuda.max_memory_reserved() / 1e6:.2f} MB"
+            )
         else:
             start = time.time()
             output = impl_func(Q, K, V)
@@ -139,9 +164,9 @@ def benchmark_implementation(
     return avg_time, times, output
 
 
-
-
-def profile_implementation_detailed(impl_func, Q, K, V, name="Implementation", enable_memory_tracking=False):
+def profile_implementation_detailed(
+    impl_func, Q, K, V, name="Implementation", enable_memory_tracking=False
+):
     """Run detailed profiling analysis for a single implementation."""
     print(f"\nDetailed profiling for {name}...")
 
@@ -160,7 +185,9 @@ def profile_implementation_detailed(impl_func, Q, K, V, name="Implementation", e
 
     if enable_memory_tracking:
         print(f"Current memory usage: {torch.cuda.memory_usage() / 1e6:.2f} MB")
-        print(f"Peak memory allocated: {torch.cuda.max_memory_allocated() / 1e6:.2f} MB")
+        print(
+            f"Peak memory allocated: {torch.cuda.max_memory_allocated() / 1e6:.2f} MB"
+        )
         print(f"Peak memory reserved: {torch.cuda.max_memory_reserved() / 1e6:.2f} MB")
 
     # Print detailed profiler information
@@ -436,7 +463,7 @@ def main():
         print()
 
         # Create test tensors
-        Q, K, V = create_test_tensors(seq_len, args.head_dim)
+        Q, K, V = create_known_test_tensors(seq_len, args.head_dim)
         print(f"Created test tensors with shape: {Q.shape}")
 
         # Verification
