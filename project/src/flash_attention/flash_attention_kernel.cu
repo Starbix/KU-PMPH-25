@@ -151,8 +151,7 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
 
     const int tid_x = threadIdx.x;
     const int tid_y = threadIdx.y;
-    // const int bdim_x = blockDim.x;
-    // const int bdim_y = blockDim.y;
+
     if (tid_x==0&& tid_y==0 && blockIdx.x==0){
         printf("B_c: %d, B_r: %d, d: %d\n", B_c, B_r, d);
         printf("bdim_x: %d, bdim_y: %d\n", bdim_x, bdim_y);
@@ -172,12 +171,15 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
 
     const int num_tiles_x = CEIL_DIV(d, bdim_x);
     const int num_tiles_y = CEIL_DIV(B_r, bdim_y);
-    // const int num_tiles_x = d/blockDim.y;
-    // const int num_tiles_y = B_r/blockDim.y;
-    // const int num_tiles = num_tiles_x * num_tiles_y;
 
     // each thread computes multiple output elements
-    ElTp O_i[num_tiles_y][num_tiles_x]; // for 32*8 this should be 12 entries and fit into registers
+    // this is thread-local memory
+    // they should be small enough to fit in registers
+    // if they don't fit, they will spill to local memory
+    // which is basically global memory and very slow
+    // AVOID THAT
+    // if we were using CUDA 13, we could spill to shared memory instead
+    ElTp O_i[num_tiles_y][num_tiles_x];
     ElTp m_i[num_tiles_y]; // per row max
     ElTp m_last[num_tiles_y];
     ElTp l_i[num_tiles_y]; // per row sum
@@ -220,6 +222,7 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
             for (int col=tid_x; col<d; col+=bdim_x){
                 Q_i[row*d + col] = Q[global_row*d + col]; // coalesced cuz + tid_x
             }
+        // if B_r doesn't divide N, need to zero out extra rows
         } else {
             #pragma unroll
             for (int col=tid_x; col<d; col+=bdim_x){
@@ -234,7 +237,7 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
     __syncthreads();
 
     for (int j=0; j<T_c; j++){
-        if (blockIdx.x==0 && tid_x==0 && tid_y==0)DEBUG_PRINT("j=%d\n", j);
+        if (DEBUG&&blockIdx.x==0 && tid_x==0 && tid_y==0)printf("j=%d\n", j);
 
         // load K_j and V_j
         #pragma unroll
@@ -247,6 +250,7 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
                     K_j[row*d + col] = K[global_row*d + col]; // coalesced cuz + tid_x
                     V_j[row*d + col] = V[global_row*d + col];
                 }
+            // if B_c doesn't divide N, need to zero out extra rows
             } else {
                 #pragma unroll
                 for (int col=tid_x;col<d; col+=bdim_x){
@@ -272,7 +276,6 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
 
         // compute S_ij = Q_i K_j^T
         // possibly move compuation inside above loop to hide latency of mem loads
-        __syncthreads();
         #pragma unroll
         for (int row=tid_y; row<B_r; row+=bdim_y){
             #pragma unroll
@@ -305,7 +308,6 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
         // this means we need to remap the threads we do have (we assume total threads >= B_r)
         // we don't need to care too much about which thread does what as long as all rows are covered
         // because we are working with shared memory here, so no coalescing issues
-        __syncthreads();
         #pragma unroll
         for (int row=tid_y; row<B_r; row+=bdim_y){
             int reg_row = row / bdim_y; // which row in registers
@@ -327,7 +329,7 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
             m_i[reg_row] = m;
         }
 
-        __syncthreads();
+        //__syncthreads();
         if (0&&DEBUG && blockIdx.x==0 && blockIdx.y==0 && tid_x==0 && tid_y==0){
             printf("m_i (j=%d): ", j);
             for (int row=0; row<num_tiles_y; row++){
@@ -376,7 +378,7 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
             //TODO: is it +=?
             l_i[reg_row] += l_val;
         }
-        __syncthreads();
+        //__syncthreads();
         // threads 0..48 now have m_i
         //
         // debug print l_i

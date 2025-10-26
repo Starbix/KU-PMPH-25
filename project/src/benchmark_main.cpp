@@ -105,14 +105,14 @@ double benchmark_implementation(
         if (profile_kernels && run == 0 && name == "Attention") {
             // Special profiling run for standard attention
             std::cout << "\n  Kernel profiling for " << name << ":" << std::endl;
-            
+
             auto Q_cont = Q.contiguous();
             auto K_cont = K.contiguous();
             auto V_cont = V.contiguous();
             auto O = torch::zeros_like(Q);
-            
+
             auto start = std::chrono::high_resolution_clock::now();
-            
+
             cudaError_t err = compute_with_profiling(
                 Q_cont.data_ptr<float>(),
                 K_cont.data_ptr<float>(),
@@ -120,12 +120,12 @@ double benchmark_implementation(
                 Q.size(0), Q.size(1),
                 O.data_ptr<float>()
             );
-            
+
             torch::cuda::synchronize();
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration<double, std::milli>(end - start).count();
             times.push_back(duration);
-            
+
             if (err != cudaSuccess) {
                 std::cerr << "CUDA Error in profiling: " << cudaGetErrorString(err) << std::endl;
             }
