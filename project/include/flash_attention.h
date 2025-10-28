@@ -11,5 +11,6 @@ namespace flash_attention {
 // Returns output tensor with same shape as Q
 // TODO: Add scaling factor 1/sqrt(head_dim)
 torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V);
+double forward_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V);
 
 }  // namespace flash_attention

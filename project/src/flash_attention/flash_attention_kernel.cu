@@ -1,7 +1,9 @@
+#include <chrono>
 #include <cstdio>
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <cassert>
+#include "./utils.h"
 
 
 #define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
@@ -16,16 +18,20 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
                                 ElTp* l, ElTp* m, int T_c);
 
 
+
 #define INSTANTIATE_KERNEL(HEAD_DIM, BC, BR, BDIM_X, BDIM_Y) \
     if (head_dim == HEAD_DIM && B_c == BC && B_r == BR && bdim_x == BDIM_X && bdim_y == BDIM_Y) { \
+        auto start = std::chrono::high_resolution_clock::now(); \
         flash_attention<float, BC, BR, HEAD_DIM, BDIM_X, BDIM_Y><<<gridDim, blockDim, sharedMemSize>>>( \
             Q_ptr, K_ptr, V_ptr, O_ptr, seq_len, nullptr, nullptr, T_c \
         ); \
-        return cudaSuccess; \
+        auto end = std::chrono::high_resolution_clock::now(); \
+        auto duration = std::chrono::duration<double, std::milli>(end - start).count(); \
+        return utils::FlashAttentionResult{.duration = duration, .cudaError = cudaSuccess}; \
     }
 
 // CUDA kernel launcher that interfaces with the torch wrapper
-cudaError_t launch_flash_attention_kernels(
+utils::FlashAttentionResult launch_flash_attention_kernels(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
     int seq_len, int head_dim
 ) {
@@ -61,10 +67,11 @@ cudaError_t launch_flash_attention_kernels(
 
     if (sharedMemSize > maxSharedMemPerBlock) {
         printf("Error: Shared memory size %zu exceeds maximum %zu\n", sharedMemSize, maxSharedMemPerBlock);
-        return cudaErrorInvalidValue;
+        return utils::FlashAttentionResult {.cudaError = cudaErrorInvalidValue};
     }
 
     // Try common configurations with compile-time constants
+
     // Head dimension 64
     INSTANTIATE_KERNEL(64, 48, 48, 32, 16)
     INSTANTIATE_KERNEL(64, 32, 32, 32, 16)
@@ -92,7 +99,7 @@ cudaError_t launch_flash_attention_kernels(
     // If no predefined configuration matches, report error with helpful suggestion
     printf("Error: Unsupported configuration - head_dim=%d, B_c=%d, B_r=%d, bdim_x=%d, bdim_y=%d\n",
            head_dim, B_c, B_r, bdim_x, bdim_y);
-    return cudaErrorInvalidValue;
+    return utils::FlashAttentionResult {.cudaError = cudaErrorInvalidValue};
 }
 
 #undef INSTANTIATE_KERNEL
