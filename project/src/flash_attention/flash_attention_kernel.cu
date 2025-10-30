@@ -30,29 +30,19 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
         return utils::FlashAttentionResult{.duration = duration, .cudaError = cudaSuccess}; \
     }
 
-// CUDA kernel launcher that interfaces with the torch wrapper
-utils::FlashAttentionResult launch_flash_attention_kernels(
+
+// This function can be used for parameter optimization
+utils::FlashAttentionResult launch_flash_attention_kernels_with_params(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
-    int seq_len, int head_dim
+    int seq_len, int head_dim, int B_c, int B_r, int bdim_x, int bdim_y
 ) {
     //get CUDA max shared memory per block
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
     size_t maxSharedMemPerBlock = prop.sharedMemPerBlock;
 
-    // launch flash attention kernel
-    int M = maxSharedMemPerBlock / sizeof(float); // max elements in shared memory
-    // ceil(M/(4*head_dim))
-    int B_c = std::min(CEIL_DIV(M, 4*head_dim), seq_len);
-    int B_r = std::min(B_c, head_dim);
-    // B_c = 32;
-    // B_r = 32;
-
     int T_c = CEIL_DIV(seq_len, B_c);
     int T_r = CEIL_DIV(seq_len, B_r);
-
-    int bdim_x = 48;
-    int bdim_y = 16;
 
     dim3 blockDim(bdim_x, bdim_y);
 
@@ -63,6 +53,7 @@ utils::FlashAttentionResult launch_flash_attention_kernels(
         printf("head_dim: %d\n", head_dim);
     }
     dim3 gridDim(T_r, 1);
+
     size_t sharedMemSize = (B_c * head_dim + B_c * head_dim + B_r * head_dim + B_r * B_c) * sizeof(float);
 
     if (sharedMemSize > maxSharedMemPerBlock) {
@@ -70,13 +61,44 @@ utils::FlashAttentionResult launch_flash_attention_kernels(
         return utils::FlashAttentionResult {.cudaError = cudaErrorInvalidValue};
     }
 
+
     // Try common configurations with compile-time constants
 
     // Head dimension 64
-    INSTANTIATE_KERNEL(64, 48, 48, 32, 16)
-    INSTANTIATE_KERNEL(64, 32, 32, 32, 16)
-    INSTANTIATE_KERNEL(64, 24, 24, 32, 16)
     INSTANTIATE_KERNEL(64, 16, 16, 32, 16)
+    INSTANTIATE_KERNEL(64, 16, 16, 48, 16)
+    INSTANTIATE_KERNEL(64, 16, 24, 32, 16)
+    INSTANTIATE_KERNEL(64, 16, 24, 48, 16)
+    INSTANTIATE_KERNEL(64, 16, 32, 32, 16)
+    INSTANTIATE_KERNEL(64, 16, 32, 48, 16)
+    INSTANTIATE_KERNEL(64, 16, 48, 32, 16)
+    INSTANTIATE_KERNEL(64, 16, 48, 48, 16)
+
+    INSTANTIATE_KERNEL(64, 24, 16, 32, 16)
+    INSTANTIATE_KERNEL(64, 24, 16, 48, 16)
+    INSTANTIATE_KERNEL(64, 24, 24, 32, 16)
+    INSTANTIATE_KERNEL(64, 24, 24, 48, 16)
+    INSTANTIATE_KERNEL(64, 24, 32, 32, 16)
+    INSTANTIATE_KERNEL(64, 24, 32, 48, 16)
+    INSTANTIATE_KERNEL(64, 24, 48, 32, 16)
+    INSTANTIATE_KERNEL(64, 24, 48, 48, 16)
+
+    INSTANTIATE_KERNEL(64, 32, 16, 32, 16)
+    INSTANTIATE_KERNEL(64, 32, 16, 48, 16)
+    INSTANTIATE_KERNEL(64, 32, 24, 32, 16)
+    INSTANTIATE_KERNEL(64, 32, 24, 48, 16)
+    INSTANTIATE_KERNEL(64, 32, 32, 32, 16)
+    INSTANTIATE_KERNEL(64, 32, 32, 48, 16)
+    INSTANTIATE_KERNEL(64, 32, 48, 32, 16)
+    INSTANTIATE_KERNEL(64, 32, 48, 48, 16)
+
+    INSTANTIATE_KERNEL(64, 48, 16, 32, 16)
+    INSTANTIATE_KERNEL(64, 48, 16, 48, 16)
+    INSTANTIATE_KERNEL(64, 48, 24, 32, 16)
+    INSTANTIATE_KERNEL(64, 48, 24, 48, 16)
+    INSTANTIATE_KERNEL(64, 48, 32, 32, 16)
+    INSTANTIATE_KERNEL(64, 48, 32, 48, 16)
+    INSTANTIATE_KERNEL(64, 48, 48, 32, 16)
     INSTANTIATE_KERNEL(64, 48, 48, 48, 16)
 
     // Head dimension 128
@@ -102,9 +124,35 @@ utils::FlashAttentionResult launch_flash_attention_kernels(
     return utils::FlashAttentionResult {.cudaError = cudaErrorInvalidValue};
 }
 
+
+// CUDA kernel launcher that interfaces with the torch wrapper
+utils::FlashAttentionResult launch_flash_attention_kernels(
+    float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
+    int seq_len, int head_dim
+) {
+    //get CUDA max shared memory per block
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    size_t maxSharedMemPerBlock = prop.sharedMemPerBlock;
+    
+    // launch flash attention kernel
+    int M = maxSharedMemPerBlock / sizeof(float); // max elements in shared memory
+    
+    int B_c = std::min(CEIL_DIV(M, 4*head_dim), seq_len);
+    int B_r = std::min(B_c, head_dim);
+    // B_c = 48;
+    // B_r = 48;
+    
+    int bdim_x = 48;
+    int bdim_y = 16;
+    
+    return launch_flash_attention_kernels_with_params(Q_ptr, K_ptr, V_ptr, O_ptr,
+        seq_len, head_dim, B_c, B_r, bdim_x, bdim_y);
+    }
+    
 #undef INSTANTIATE_KERNEL
-
-
+    
+    
 template<class ElTp>
 __global__ void init_l(ElTp* l, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;

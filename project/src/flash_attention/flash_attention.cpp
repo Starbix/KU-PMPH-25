@@ -3,9 +3,14 @@
 #include "./utils.h"
 
 // Forward declaration of CUDA kernel launcher
+
 utils::FlashAttentionResult launch_flash_attention_kernels(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
     int seq_len, int head_dim
+);
+utils::FlashAttentionResult launch_flash_attention_kernels_with_params(
+    float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
+    int seq_len, int head_dim, int B_c, int B_r, int bdim_x, int bdim_y
 );
 
 namespace flash_attention {
@@ -60,7 +65,9 @@ torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     return O;
 }
 
-double forward_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
+// this function can be used for parameter optimization
+double forward_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V,
+    int B_c, int B_r, int bdim_x, int bdim_y) {
     // Input validation
     TORCH_CHECK(Q.defined(), "Q tensor is not defined");
     TORCH_CHECK(K.defined(), "K tensor is not defined");
@@ -100,9 +107,10 @@ double forward_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     float* O_ptr = O.data_ptr<float>();
     
     // Launch CUDA kernels
-    utils::FlashAttentionResult result = launch_flash_attention_kernels(
+    utils::FlashAttentionResult result = launch_flash_attention_kernels_with_params(
         Q_ptr, K_ptr, V_ptr, O_ptr,
-        seq_len, head_dim
+        seq_len, head_dim,
+        B_c, B_r, bdim_x, bdim_y
     );
     
     TORCH_CHECK(result.cudaError == cudaSuccess, "CUDA kernel launch failed: ", cudaGetErrorString(result.cudaError));
@@ -112,11 +120,18 @@ double forward_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
 
 } // namespace flash_attention
 
+// #define ENABLE_PYBIND
+
 // PyBind11 module definition for Python interface
 #ifdef ENABLE_PYBIND
 #include <torch/extension.h>
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("forward", &flash_attention::forward, "Flash attention forward pass");
-    m.def("forward_duration", &flash_attention::forward_duration, "Flash attention forward pass duration for optimization");
+    m.def(
+        "forward_duration", 
+        (double(*)(torch::Tensor, torch::Tensor, torch::Tensor, int, int, int, int))
+            &flash_attention::forward_duration,
+        "Flash attention forward pass duration for optimization"
+    );
 }
 #endif
