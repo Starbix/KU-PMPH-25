@@ -1,6 +1,8 @@
 #include "attention_kernel.cu.h"
 #include <cuda_runtime.h>
-#include "../utils.cu"
+#include <stdio.h>
+#include <chrono>
+#include "../utils.h"
 
 
 // Simple transpose kernel
@@ -43,9 +45,9 @@ __global__ void fill_ones_kernel(float* K, int total_elements) {
 }
 
 template<class ElTp, int T>
-cudaError_t compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
+utils::FlashAttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
     // implement standard attention by using the kernels from attention_kernel
-
+    auto start = std::chrono::high_resolution_clock::now();
     // Different grid configurations for different operations
     dim3 block(T, T, 1);
 
@@ -78,9 +80,10 @@ cudaError_t compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) 
     cudaFree(K_tr);
     cudaFree(S);
     cudaFree(P);
-
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration<double, std::milli>(end - start).count();
     // Return any error that occurred
-    return cudaGetLastError();
+    return utils::FlashAttentionResult{.duration = duration, .cudaError = cudaGetLastError()};
 }
 
 // Profiling version with CUDA events
@@ -156,5 +159,5 @@ cudaError_t compute_with_profiling(float* Q, float* K, float* V, uint32_t N, uin
     return cudaGetLastError();
 }
 
-template cudaError_t compute<float, 32>(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);
-template cudaError_t compute<float, 16>(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);
+template utils::FlashAttentionResult compute<float, 32>(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);
+template utils::FlashAttentionResult compute<float, 16>(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);

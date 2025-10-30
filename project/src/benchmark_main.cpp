@@ -6,7 +6,7 @@
 #include <cstring>
 #include <torch/torch.h>
 #include <cuda_runtime.h>
-#include "utils.cu"
+
 
 int gpuAssert(cudaError_t code) {
   if(code != cudaSuccess) {

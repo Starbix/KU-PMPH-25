@@ -5,7 +5,7 @@ Runs flash attention and minimizes runtime.
 
 import argparse
 import os
-import time
+import math
 import torch
 import torch.nn.functional as F
 from torch.utils.cpp_extension import load
@@ -19,17 +19,18 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
 
 
 def main():
-    seq_len = 1024
+    seq_len = 128
     head_dim = 64
 
     parser = argparse.ArgumentParser(description="A simple greeting program.")
-    parser.add_argument("-N", help=f"Sequence length (default {seq_len})")
-    parser.add_argument("-d", type=int, help=f"Head dimension (default {head_dim})")
+    parser.add_argument("--seq_len", help=f"Sequence length (default {seq_len})")
+    parser.add_argument("--head_dim", type=int, help=f"Head dimension (default {head_dim})")
+    parser.add_argument("--with_standard", action="store_true", help=f"Whether or not optimization should be done with comparison of standard attention.")
     args = parser.parse_args()
 
-    if (args.N):
+    if (args.seq_len):
         seq_len = args.N
-    if (args.d):
+    if (args.head_dim):
         head_dim = args.d
 
     print(f"Running optimization with sequence length {seq_len} and head dimension {head_dim}")
@@ -40,23 +41,37 @@ def main():
 
     print("Loading flash_attention module")
     attention, flash_attention = load_attention_modules()
-    impl_func = flash_attention.forward_duration
+    flash_attention_func = flash_attention.forward_duration
+    standard_attention_func = attention.forward_duration
 
     print("Creating test matrices")
     Q, K, V = create_random_test_tensors(seq_len, head_dim)
 
-    print("Running optimization...")
     grid = FlashAttentionParameterGrid(
         Bcs     = [48, 32, 24, 16],
         Brs     = [48, 32, 24, 16],
         bdim_xs = [32, 48],
         bdim_ys = [16]
     )
-    optimal_parameters = optimize(grid, impl_func, Q, K, V)
-
-    print("Optimization done. Result:")
-    print(optimal_parameters)
-
+    if (args.with_standard):
+        print("Running optimization, with standard attention as baseline")
+        optimal_parameters = optimize_with_standard_attention(
+            grid, 
+            flash_attention_func, 
+            standard_attention_func,
+            Q, K, V
+        )
+        print("Optimization done. Result:")
+        print(optimal_parameters)
+    else:
+        print("Running optimization, without standard attention as baseline")
+        optimal_parameters = optimize(
+            grid, 
+            flash_attention_func, 
+            Q, K, V
+        )
+        print("Optimization done. Result:")
+        print(optimal_parameters)
 
 def load_attention_modules():
     """Load the attention and flash_attention CUDA modules."""
@@ -89,7 +104,7 @@ def create_random_test_tensors(seq_len : int, head_dim : int, device="cuda", dty
     v = torch.randn(seq_len, head_dim, dtype=dtype, device=device)
     return q, k, v
 
-def benchmark_attention(
+def benchmark_standard_attention(
     impl_func,
     Q,
     K,
@@ -109,12 +124,9 @@ def benchmark_attention(
     times = []
 
     for _ in range(num_runs):
-        start = time.time()
-        output = impl_func(Q, K, V)
+        runtime = impl_func(Q, K, V)
         torch.cuda.synchronize()
-        end = time.time()
-        run_time = (end - start) * 1000  # Convert to milliseconds
-        times.append(run_time)
+        times.append(runtime)
 
     avg_time = sum(times) / len(times)
     std_time = np.std(times)
@@ -182,7 +194,7 @@ def optimize(
         "bdim_x": 0,
         "bdim_y": 0
     }
-    best_avg_time = 0
+    best_avg_time = math.inf
     for B_c in grid.B_cs:
         for B_r in grid.B_rs:
             for bdim_x in grid.bdim_xs:
@@ -199,7 +211,7 @@ def optimize(
                         num_runs=num_runs,
                         warmup_runs=warmup_runs
                     )
-                    if (avg_time > best_avg_time):
+                    if (avg_time < best_avg_time):
                         best_avg_time = avg_time
                         optimal_parameters["B_c"] = B_c
                         optimal_parameters["B_r"] = B_r
@@ -226,7 +238,7 @@ def optimize_with_standard_attention(
         "avg_time_flash": 0,
         "avg_time_standard": 0
     }
-    best_avg_time = 0
+    best_avg_time = math.inf
     for B_c in grid.B_cs:
         for B_r in grid.B_rs:
             for bdim_x in grid.bdim_xs:
@@ -243,7 +255,7 @@ def optimize_with_standard_attention(
                         num_runs=num_runs,
                         warmup_runs=warmup_runs
                     )
-                    avg_time_standard, _, _, _ = benchmark_attention(
+                    avg_time_standard, _, _, _ = benchmark_standard_attention(
                         impl_func_standard,
                         Q,
                         K,
@@ -251,7 +263,7 @@ def optimize_with_standard_attention(
                         num_runs=num_runs,
                         warmup_runs=warmup_runs
                     )
-                    if (avg_time_flash > avg_time_standard and avg_time_flash > best_avg_time):
+                    if (avg_time_flash < avg_time_standard and avg_time_flash < best_avg_time):
                         best_avg_time = avg_time_flash
                         optimal_parameters["B_c"] = B_c
                         optimal_parameters["B_r"] = B_r
