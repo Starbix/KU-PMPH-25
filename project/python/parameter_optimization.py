@@ -23,15 +23,15 @@ def main():
     head_dim = 64
 
     parser = argparse.ArgumentParser(description="A simple greeting program.")
-    parser.add_argument("--seq_len", help=f"Sequence length (default {seq_len})")
+    parser.add_argument("--seq_len", type=int, help=f"Sequence length (default {seq_len})")
     parser.add_argument("--head_dim", type=int, help=f"Head dimension (default {head_dim})")
     parser.add_argument("--with_standard", action="store_true", help=f"Whether or not optimization should be done with comparison of standard attention.")
     args = parser.parse_args()
 
     if (args.seq_len):
-        seq_len = args.N
+        seq_len = args.seq_len
     if (args.head_dim):
-        head_dim = args.d
+        head_dim = args.head_dim
 
     print(f"Running optimization with sequence length {seq_len} and head dimension {head_dim}")
 

@@ -234,8 +234,8 @@ utils::FlashAttentionResult launch_flash_attention_kernels(
     
     // int B_c = std::min(CEIL_DIV(M, 4*head_dim), seq_len);
     // int B_r = std::min(B_c, head_dim);
-    int B_c = 24;
-    int B_r = 16;
+    int B_c = 16;
+    int B_r = 24;
     
     int bdim_x = 48;
     int bdim_y = 16;
