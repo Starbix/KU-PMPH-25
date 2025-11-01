@@ -47,11 +47,20 @@ def main():
     print("Creating test matrices")
     Q, K, V = create_random_test_tensors(seq_len, head_dim)
 
+    device = torch.device("cuda:0")
+    props = torch.cuda.get_device_properties(device)
+    M = props.shared_memory_per_block
+
+    B_c = math.ceil(M/4*head_dim) 
+    B_r = min(B_c, head_dim)
+
+    # print(f"B_c: {B_c}, B_r: {B_r}")
+
     grid = FlashAttentionParameterGrid(
         Bcs     = [48, 32, 24, 16],
         Brs     = [48, 32, 24, 16],
-        bdim_xs = [32, 48],
-        bdim_ys = [16]
+        bdim_xs = [32, 48, 64],
+        bdim_ys = [8, 16]
     )
     if (args.with_standard):
         print("Running optimization, with standard attention as baseline")
@@ -59,7 +68,9 @@ def main():
             grid, 
             flash_attention_func, 
             standard_attention_func,
-            Q, K, V
+            Q, K, V,
+            num_runs=50,
+            warmup_runs=1
         )
         print("Optimization done. Result:")
         print(optimal_parameters)
@@ -68,7 +79,9 @@ def main():
         optimal_parameters = optimize(
             grid, 
             flash_attention_func, 
-            Q, K, V
+            Q, K, V,
+            num_runs=50,
+            warmup_runs=1
         )
         print("Optimization done. Result:")
         print(optimal_parameters)
@@ -235,8 +248,8 @@ def optimize_with_standard_attention(
         "B_r": 0,
         "bdim_x": 0,
         "bdim_y": 0,
-        "avg_time_flash": 0,
-        "avg_time_standard": 0
+        "avg_time_flash (ms)": 0,
+        "avg_time_standard (ms)": 0
     }
     best_avg_time = math.inf
     for B_c in grid.B_cs:
