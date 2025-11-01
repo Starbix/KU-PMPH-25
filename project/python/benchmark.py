@@ -42,6 +42,8 @@ def main():
     print("Creating test matrices")
     Q, K, V = opt.create_random_test_tensors(seq_len, head_dim)
 
+    print("Running benchmarking...")
+
     avg_time_pytorch, std_time_pytorch, min_time_pytorch, max_time_pytorch = opt.benchmark_standard_attention(
         torch_reference_attention,
         Q, K, V,
@@ -70,22 +72,50 @@ def main():
     print("## Flash attention:")
     print(f"Avg. runtime: {avg_time_flash}\t\nStd. runtime: {std_time_flash}\t\nMin. runtime: {min_time_flash}\t\nMax. runtime: {max_time_flash}")
     print("")
-    print(f"\tPytorch/Flash speedup: {avg_time_pytorch/avg_time_flash}")
-    print(f"\tStandard/Flash speedup: {avg_time_standard/avg_time_flash}")
+    print(f"Pytorch/Flash speedup: {avg_time_pytorch/avg_time_flash}")
+    print(f"Standard/Flash speedup: {avg_time_standard/avg_time_flash}")
+
+    print("Running validation...")
+
+    O_torch = torch_reference_attention(Q, K, V, measure_time=False)
+    O_standard = None
+    O_flash = None
+
+    print("# Validation results:")
 
 
 
-def torch_reference_attention(Q, K, V):
+
+def torch_reference_attention(Q, K, V, measure_time=True):
     """
     Reference PyTorch attention implementation for verification.
     Uses standard scaled dot-product attention (without scaling for now).
+    If measure_time=True, returns runtime in milliseconds.
     """
-    # Q, K, V shape: (seq_len, head_dim)
-    # TODO: Add scaling factor 1/sqrt(head_dim)
-    scores = torch.matmul(Q, K.transpose(-2, -1))  # (seq_len, seq_len)
-    probs = F.softmax(scores, dim=-1)  # (seq_len, seq_len)
-    output = torch.matmul(probs, V)  # (seq_len, head_dim)
-    return output
+    if measure_time:
+        # Create CUDA events for timing
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        
+        start.record()
+        
+        # Perform attention
+        scores = torch.matmul(Q, K.transpose(-2, -1))
+        probs = torch.softmax(scores, dim=-1)
+        output = torch.matmul(probs, V)
+        
+        end.record()
+        # Wait for the events to be recorded
+        torch.cuda.synchronize()
+        # Compute elapsed time in milliseconds
+        runtime_ms = start.elapsed_time(end)
+        return runtime_ms
+    else:
+        # Just return the output (for correctness checking)
+        scores = torch.matmul(Q, K.transpose(-2, -1))
+        probs = torch.softmax(scores, dim=-1)
+        output = torch.matmul(probs, V)
+        return output
 
 
 if __name__ == "__main__": main()
