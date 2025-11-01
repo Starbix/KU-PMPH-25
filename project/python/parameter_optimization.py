@@ -19,19 +19,14 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
 
 
 def main():
-    seq_len = 128
-    head_dim = 64
-
     parser = argparse.ArgumentParser(description="A simple greeting program.")
-    parser.add_argument("--seq_len", type=int, help=f"Sequence length (default {seq_len})")
-    parser.add_argument("--head_dim", type=int, help=f"Head dimension (default {head_dim})")
+    parser.add_argument("--seq_len", type=int, help=f"Sequence length (default {128})", default=128)
+    parser.add_argument("--head_dim", type=int, help=f"Head dimension (default {64})", default=64)
     parser.add_argument("--with_standard", action="store_true", help=f"Whether or not optimization should be done with comparison of standard attention.")
     args = parser.parse_args()
 
-    if (args.seq_len):
-        seq_len = args.seq_len
-    if (args.head_dim):
-        head_dim = args.head_dim
+    seq_len = args.seq_len
+    head_dim = args.head_dim
 
     print(f"Running optimization with sequence length {seq_len} and head dimension {head_dim}")
 
@@ -47,12 +42,12 @@ def main():
     print("Creating test matrices")
     Q, K, V = create_random_test_tensors(seq_len, head_dim)
 
-    device = torch.device("cuda:0")
-    props = torch.cuda.get_device_properties(device)
-    M = props.shared_memory_per_block
+    # device = torch.device("cuda:0")
+    # props = torch.cuda.get_device_properties(device)
+    # M = props.shared_memory_per_block
 
-    B_c = math.ceil(M/4*head_dim) 
-    B_r = min(B_c, head_dim)
+    # B_c = math.ceil(M/4*head_dim) 
+    # B_r = min(B_c, head_dim)
 
     # print(f"B_c: {B_c}, B_r: {B_r}")
 
@@ -249,41 +244,50 @@ def optimize_with_standard_attention(
         "bdim_x": 0,
         "bdim_y": 0,
         "avg_time_flash (ms)": 0,
-        "avg_time_standard (ms)": 0
+        "avg_time_standard (ms)": 0,
+        "speedup": 0,
+        "failing_configuations": []
     }
     best_avg_time = math.inf
     for B_c in grid.B_cs:
         for B_r in grid.B_rs:
             for bdim_x in grid.bdim_xs:
                 for bdim_y in grid.bdim_ys:
-                    avg_time_flash, _, _, _ = benchmark_flash_attention(
-                        impl_func_flash,
-                        Q,
-                        K,
-                        V,
-                        B_c,
-                        B_r,
-                        bdim_x,
-                        bdim_y,
-                        num_runs=num_runs,
-                        warmup_runs=warmup_runs
-                    )
-                    avg_time_standard, _, _, _ = benchmark_standard_attention(
-                        impl_func_standard,
-                        Q,
-                        K,
-                        V,
-                        num_runs=num_runs,
-                        warmup_runs=warmup_runs
-                    )
-                    if (avg_time_flash < avg_time_standard and avg_time_flash < best_avg_time):
-                        best_avg_time = avg_time_flash
-                        optimal_parameters["B_c"] = B_c
-                        optimal_parameters["B_r"] = B_r
-                        optimal_parameters["bdim_x"] = bdim_x
-                        optimal_parameters["bdim_y"] = bdim_y
-                        optimal_parameters["avg_time_flash"] = avg_time_flash
-                        optimal_parameters["avg_time_standard"] = avg_time_standard
+                    try:
+                        avg_time_flash, _, _, _ = benchmark_flash_attention(
+                            impl_func_flash,
+                            Q,
+                            K,
+                            V,
+                            B_c,
+                            B_r,
+                            bdim_x,
+                            bdim_y,
+                            num_runs=num_runs,
+                            warmup_runs=warmup_runs
+                        )
+                        avg_time_standard, _, _, _ = benchmark_standard_attention(
+                            impl_func_standard,
+                            Q,
+                            K,
+                            V,
+                            num_runs=num_runs,
+                            warmup_runs=warmup_runs
+                        )
+                        if (avg_time_flash < avg_time_standard and avg_time_flash < best_avg_time):
+                            best_avg_time = avg_time_flash
+                            optimal_parameters["B_c"] = B_c
+                            optimal_parameters["B_r"] = B_r
+                            optimal_parameters["bdim_x"] = bdim_x
+                            optimal_parameters["bdim_y"] = bdim_y
+                            optimal_parameters["avg_time_flash (ms)"] = avg_time_flash
+                            optimal_parameters["avg_time_standard (ms)"] = avg_time_standard
+                            optimal_parameters["speedup"] = avg_time_standard / avg_time_flash
+                    except Exception as e:
+                        optimal_parameters["failing_configuations"] = {
+                            "B_c": B_c, "B_r": B_r, "bdim_x": bdim_x, "bdim_y": bdim_y}
+                        # skipping this configuration
+                        continue
     return optimal_parameters
 
 
