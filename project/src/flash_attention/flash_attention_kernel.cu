@@ -25,6 +25,7 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
         flash_attention<float, BC, BR, HEAD_DIM, BDIM_X, BDIM_Y><<<gridDim, blockDim, sharedMemSize>>>( \
             Q_ptr, K_ptr, V_ptr, O_ptr, seq_len, nullptr, nullptr, T_c \
         ); \
+        cudaDeviceSynchronize(); \
         auto end = std::chrono::high_resolution_clock::now(); \
         auto duration = std::chrono::duration<double, std::milli>(end - start).count(); \
         return utils::FlashAttentionResult{.duration = duration, .cudaError = cudaSuccess}; \
@@ -472,25 +473,25 @@ utils::FlashAttentionResult launch_flash_attention_kernels(
     // cudaDeviceProp prop;
     // cudaGetDeviceProperties(&prop, 0);
     // size_t maxSharedMemPerBlock = prop.sharedMemPerBlock;
-    
+
     // // launch flash attention kernel
     // int M = maxSharedMemPerBlock / sizeof(float); // max elements in shared memory
-    
+
     // int B_c = std::min(CEIL_DIV(M, 4*head_dim), seq_len);
     // int B_r = std::min(B_c, head_dim);
     int B_c = 48;
     int B_r = 32;
-    
+
     int bdim_x = 32;
     int bdim_y = 16;
-    
+
     return launch_flash_attention_kernels_with_params(Q_ptr, K_ptr, V_ptr, O_ptr,
         seq_len, head_dim, B_c, B_r, bdim_x, bdim_y);
     }
-    
+
 #undef INSTANTIATE_KERNEL
-    
-    
+
+
 template<class ElTp>
 __global__ void init_l(ElTp* l, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
