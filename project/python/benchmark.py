@@ -64,26 +64,63 @@ def main():
          warmup_runs=1
     )
 
-    print("# Benchmark results:")
+    print("Running validation...")
+
+    O_torch = torch_reference_attention(Q, K, V, measure_time=False)
+    O_standard = attention.forward(Q, K, V)
+    O_flash = flash_attention.forward_with_parameters(Q, K, V, B_c, B_r, bdim_x, bdim_y)
+
+    standard_validated , standard_max_abs_err, _ = validate_attention_outputs(O_torch, O_standard)
+    flash_validated, flash_max_abs_err, _ = validate_attention_outputs(O_torch, O_flash)
+
+    print("\n# Benchmark results:")
     print("## Pytorch reference:")
     print(f"Avg. runtime: {avg_time_pytorch}\t\nStd. runtime: {std_time_pytorch}\t\nMin. runtime: {min_time_pytorch}\t\nMax. runtime: {max_time_pytorch}")
     print("## Standard attention:")
     print(f"Avg. runtime: {avg_time_standard}\t\nStd. runtime: {std_time_standard}\t\nMin. runtime: {min_time_standard}\t\nMax. runtime: {max_time_standard}")
     print("## Flash attention:")
     print(f"Avg. runtime: {avg_time_flash}\t\nStd. runtime: {std_time_flash}\t\nMin. runtime: {min_time_flash}\t\nMax. runtime: {max_time_flash}")
-    print("")
-    print(f"Pytorch/Flash speedup: {avg_time_pytorch/avg_time_flash}")
-    print(f"Standard/Flash speedup: {avg_time_standard/avg_time_flash}")
+    print(f"## Pytorch/Flash speedup: {avg_time_pytorch/avg_time_flash}")
+    print(f"## Standard/Flash speedup: {avg_time_standard/avg_time_flash}")
 
-    print("Running validation...")
-
-    O_torch = torch_reference_attention(Q, K, V, measure_time=False)
-    O_standard = None
-    O_flash = None
-
-    print("# Validation results:")
+    print("\n# Validation results:")
+    print("Standard attention: " + "VALIDATED" if standard_validated else "FAILURE\t\nMax abs. error: {standard_max_abs_err}")
+    print("Flash attention: " + "VALIDATED" if flash_validated else "FAILURE\t\nMax abs. error: {flash_max_abs_err}")
 
 
+def validate_attention_outputs(O_ref, O_test, atol=1e-5, rtol=1e-3):
+    """
+    Validate that O_test matches O_ref within tolerances.
+    
+    Parameters:
+        O_ref : torch.Tensor
+            Reference output (e.g., O_torch)
+        O_test : torch.Tensor
+            Output to validate (e.g., O_standard or O_flash)
+        atol : float
+            Absolute tolerance
+        rtol : float
+            Relative tolerance
+
+    Returns:
+        success : bool
+        max_abs_error : float
+        max_rel_error : float
+    """
+    # Convert to CPU and float if needed
+    O_ref_cpu = O_ref.detach().cpu()
+    O_test_cpu = O_test.detach().cpu()
+
+    # Max absolute difference
+    max_abs_error = torch.max(torch.abs(O_ref_cpu - O_test_cpu)).item()
+    
+    # Max relative difference
+    max_rel_error = torch.max(torch.abs(O_ref_cpu - O_test_cpu) / (torch.abs(O_ref_cpu) + 1e-8)).item()
+    
+    # Check closeness
+    success = torch.allclose(O_ref_cpu, O_test_cpu, atol=atol, rtol=rtol)
+    
+    return success, max_abs_error, max_rel_error
 
 
 def torch_reference_attention(Q, K, V, measure_time=True):
