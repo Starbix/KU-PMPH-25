@@ -46,16 +46,14 @@ __global__ void fill_ones_kernel(float* K, int total_elements) {
 
 template<class ElTp, int T>
 utils::FlashAttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
-    // implement standard attention by using the kernels from attention_kernel
     auto start = std::chrono::high_resolution_clock::now();
-    // Different grid configurations for different operations
-    dim3 block(T, T, 1);
 
-    // 1. Transpose K
+    dim3 block(T, T, 1);
     int dim_N = ceil(((float)N)/T);
     int dim_d = ceil(((float)d)/T);
     dim3 grid(dim_d, dim_N, 1);
 
+    // 1. Transpose K
     ElTp* K_tr;
     cudaMalloc(&K_tr, N * d * sizeof(ElTp));
     transpose<ElTp, T> <<<grid, block>>>(K, K_tr, N, d);
