@@ -164,9 +164,9 @@ def torch_reference_attention(Q, K, V, measure_time=True):
         start.record()
 
         # Perform attention
-        scores = torch.matmul(Q, K.transpose(-2, -1))
-        probs = torch.softmax(scores, dim=-1)
-        output = torch.matmul(probs, V)
+        S = torch.matmul(Q, K.transpose(-2, -1))
+        P = torch.softmax(S, dim=-1)
+        O = torch.matmul(P, V)
 
         end.record()
         # Wait for the events to be recorded
@@ -176,10 +176,10 @@ def torch_reference_attention(Q, K, V, measure_time=True):
         return runtime_ms
     else:
         # Just return the output (for correctness checking)
-        scores = torch.matmul(Q, K.transpose(-2, -1))
-        probs = torch.softmax(scores, dim=-1)
-        output = torch.matmul(probs, V)
-        return output
+        S = torch.matmul(Q, K.transpose(-2, -1))
+        P = torch.softmax(S, dim=-1)
+        O = torch.matmul(P, V)
+        return O
 
 
 if __name__ == "__main__":
