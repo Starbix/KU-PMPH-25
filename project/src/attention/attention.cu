@@ -61,11 +61,9 @@ utils::FlashAttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint3
     transpose<ElTp, T> <<<grid, block>>>(K, K_tr, N, d);
 
     // 2. Call compute_S(Q, K_tr, N, d, S)
-    dim3 grid_S(dim_N, dim_N, 1);
-
     ElTp* S;
     cudaMalloc(&S, N * N * sizeof(ElTp));
-    compute_S<ElTp, T> <<<grid_S, block>>>(Q, K_tr, N, d, S);
+    compute_S<ElTp, T> <<<grid, block>>>(Q, K_tr, N, d, S);
 
     // 3. Call compute_P(S, N)
     ElTp* P;
