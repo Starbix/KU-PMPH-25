@@ -34,7 +34,7 @@ def main():
         print("⚠️ CUDA not available — exiting.")
         return    
 
-    print("Loading flash_attention module")
+    print("Loading attention modules")
     attention, flash_attention = load_attention_modules()
     flash_attention_func = flash_attention.forward_duration
     standard_attention_func = attention.forward_duration

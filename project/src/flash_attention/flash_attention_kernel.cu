@@ -114,6 +114,8 @@ utils::FlashAttentionResult launch_flash_attention_kernels_with_params(
     INSTANTIATE_KERNEL(64, 24, 48, 48, 8)
     INSTANTIATE_KERNEL(64, 24, 48, 64, 16)
     INSTANTIATE_KERNEL(64, 24, 48, 64, 8)
+    INSTANTIATE_KERNEL(64, 32, 16, 16, 8)
+    INSTANTIATE_KERNEL(64, 32, 16, 16, 16)
     INSTANTIATE_KERNEL(64, 32, 16, 32, 16)
     INSTANTIATE_KERNEL(64, 32, 16, 32, 8)
     INSTANTIATE_KERNEL(64, 32, 16, 48, 16)
@@ -825,6 +827,9 @@ template __global__ void flash_attention<float, 32, 32, 64, 32, 16>(float*, floa
 template __global__ void flash_attention<float, 24, 24, 64, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 template __global__ void flash_attention<float, 16, 16, 64, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 template __global__ void flash_attention<float, 48, 48, 64, 48, 16>(float*, float*, float*, float*, int, float*, float*, int);
+template __global__ void flash_attention<float, 32, 16, 64, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
+template __global__ void flash_attention<float, 32, 16, 64, 16, 8>(float*, float*, float*, float*, int, float*, float*, int);
+template __global__ void flash_attention<float, 32, 16, 64, 48, 16>(float*, float*, float*, float*, int, float*, float*, int);
 
 
 // Head dimension 128
@@ -832,11 +837,14 @@ template __global__ void flash_attention<float, 32, 32, 128, 32, 16>(float*, flo
 template __global__ void flash_attention<float, 24, 24, 128, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 template __global__ void flash_attention<float, 16, 16, 128, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 template __global__ void flash_attention<float, 12, 12, 128, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
+template __global__ void flash_attention<float, 32, 16, 128, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 
 // Head dimension 256
 template __global__ void flash_attention<float, 16, 16, 256, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 template __global__ void flash_attention<float, 12, 12, 256, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
 template __global__ void flash_attention<float, 8, 8, 256, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
+template __global__ void flash_attention<float, 32, 16, 256, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);
+template __global__ void flash_attention<float, 16, 8, 256, 8, 8>(float*, float*, float*, float*, int, float*, float*, int);
 
 // Head dimension 32
 template __global__ void flash_attention<float, 64, 32, 32, 32, 16>(float*, float*, float*, float*, int, float*, float*, int);

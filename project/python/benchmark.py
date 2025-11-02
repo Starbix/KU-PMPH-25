@@ -40,7 +40,7 @@ def main():
         print("⚠️ CUDA not available — exiting.")
         return
 
-    print("Loading flash_attention module")
+    print("Loading attention modules")
     attention, flash_attention = opt.load_attention_modules()
     flash_attention_func = flash_attention.forward_duration
     standard_attention_func = attention.forward_duration
@@ -92,7 +92,7 @@ def main():
         f"Avg. runtime: {avg_time_pytorch}\t\nStd. runtime: {std_time_pytorch}\t\nMin. runtime: {min_time_pytorch}\t\nMax. runtime: {max_time_pytorch}"
     )
     print("## Standard attention:")
-    # print(f"Avg. runtime: {avg_time_standard}\t\nStd. runtime: {std_time_standard}\t\nMin. runtime: {min_time_standard}\t\nMax. runtime: {max_time_standard}")
+    print(f"Avg. runtime: {avg_time_standard}\t\nStd. runtime: {std_time_standard}\t\nMin. runtime: {min_time_standard}\t\nMax. runtime: {max_time_standard}")
     print("## Flash attention:")
     print(
         f"Avg. runtime: {avg_time_flash}\t\nStd. runtime: {std_time_flash}\t\nMin. runtime: {min_time_flash}\t\nMax. runtime: {max_time_flash}"
@@ -100,7 +100,7 @@ def main():
     print(f"## Pytorch/Flash speedup: {avg_time_pytorch / avg_time_flash}")
     print(f"## Standard/Flash speedup: {avg_time_standard / avg_time_flash}")
 
-    print("\n# Validation results:")
+    print("# Validation results:")
     print(
         "Standard attention: " + "VALIDATED"
         if standard_validated
