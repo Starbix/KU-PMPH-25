@@ -5,11 +5,11 @@
 // Forward declaration of CUDA kernel launcher
 
 
-utils::FlashAttentionResult launch_flash_attention_kernels(
+utils::AttentionResult launch_flash_attention_kernels(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
     int seq_len, int head_dim
 );
-utils::FlashAttentionResult launch_flash_attention_kernels_with_params(
+utils::AttentionResult launch_flash_attention_kernels_with_params(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
     int seq_len, int head_dim, int B_c, int B_r, int bdim_x, int bdim_y
 );
@@ -56,7 +56,7 @@ torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     float* O_ptr = O.data_ptr<float>();
 
     // Launch CUDA kernels
-    utils::FlashAttentionResult result = launch_flash_attention_kernels(
+    utils::AttentionResult result = launch_flash_attention_kernels(
         Q_ptr, K_ptr, V_ptr, O_ptr,
         seq_len, head_dim
     );
@@ -107,7 +107,7 @@ int B_c, int B_r, int bdim_x, int bdim_y) {
     float* O_ptr = O.data_ptr<float>();
     
     // Launch CUDA kernels
-    utils::FlashAttentionResult result = launch_flash_attention_kernels_with_params(
+    utils::AttentionResult result = launch_flash_attention_kernels_with_params(
         Q_ptr, K_ptr, V_ptr, O_ptr,
         seq_len, head_dim,
         B_c, B_r, bdim_x, bdim_y
@@ -161,7 +161,7 @@ double forward_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V,
     float* O_ptr = O.data_ptr<float>();
 
     // Launch CUDA kernels
-    utils::FlashAttentionResult result = launch_flash_attention_kernels_with_params(
+    utils::AttentionResult result = launch_flash_attention_kernels_with_params(
         Q_ptr, K_ptr, V_ptr, O_ptr,
         seq_len, head_dim,
         B_c, B_r, bdim_x, bdim_y
@@ -215,7 +215,7 @@ torch::Tensor forward_with_params(torch::Tensor Q, torch::Tensor K, torch::Tenso
         float* O_ptr = O.data_ptr<float>();
 
         // Launch CUDA kernels
-        utils::FlashAttentionResult result = launch_flash_attention_kernels_with_params(
+        utils::AttentionResult result = launch_flash_attention_kernels_with_params(
             Q_ptr, K_ptr, V_ptr, O_ptr,
             seq_len, head_dim,
             B_c, B_r, bdim_x, bdim_y

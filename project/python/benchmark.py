@@ -104,12 +104,12 @@ def main():
     print(
         "Standard attention: " + "VALIDATED"
         if standard_validated
-        else "FAILURE\t\nMax abs. error: {standard_max_abs_err}"
+        else f"FAILURE\t\nMax abs. error: {standard_max_abs_err}"
     )
     print(
         "Flash attention: " + "VALIDATED"
         if flash_validated
-        else "FAILURE\t\nMax abs. error: {flash_max_abs_err}"
+        else f"FAILURE\t\nMax abs. error: {flash_max_abs_err}"
     )
 
 

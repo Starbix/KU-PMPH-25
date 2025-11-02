@@ -28,12 +28,12 @@ __global__ void flash_attention(ElTp* Q, ElTp* K, ElTp* V, ElTp* O, int N,
         cudaDeviceSynchronize(); \
         auto end = std::chrono::high_resolution_clock::now(); \
         auto duration = std::chrono::duration<double, std::milli>(end - start).count(); \
-        return utils::FlashAttentionResult{.duration = duration, .cudaError = cudaSuccess}; \
+        return utils::AttentionResult{.duration = duration, .cudaError = cudaSuccess}; \
     }
 
 
 // This function can be used for parameter optimization
-utils::FlashAttentionResult launch_flash_attention_kernels_with_params(
+utils::AttentionResult launch_flash_attention_kernels_with_params(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
     int seq_len, int head_dim, int B_c, int B_r, int bdim_x, int bdim_y
 ) {
@@ -59,7 +59,7 @@ utils::FlashAttentionResult launch_flash_attention_kernels_with_params(
 
     if (sharedMemSize > maxSharedMemPerBlock) {
         printf("Error: Shared memory size %zu exceeds maximum %zu\n", sharedMemSize, maxSharedMemPerBlock);
-        return utils::FlashAttentionResult {.cudaError = cudaErrorInvalidValue};
+        return utils::AttentionResult {.cudaError = cudaErrorInvalidValue};
     }
 
 
@@ -462,12 +462,12 @@ utils::FlashAttentionResult launch_flash_attention_kernels_with_params(
     // If no predefined configuration matches, report error with helpful suggestion
     printf("Error: Unsupported configuration - head_dim=%d, B_c=%d, B_r=%d, bdim_x=%d, bdim_y=%d\n",
            head_dim, B_c, B_r, bdim_x, bdim_y);
-    return utils::FlashAttentionResult {.cudaError = cudaErrorInvalidValue};
+    return utils::AttentionResult {.cudaError = cudaErrorInvalidValue};
 }
 
 
 // CUDA kernel launcher that interfaces with the torch wrapper
-utils::FlashAttentionResult launch_flash_attention_kernels(
+utils::AttentionResult launch_flash_attention_kernels(
     float* Q_ptr, float* K_ptr, float* V_ptr, float* O_ptr,
     int seq_len, int head_dim
 ) {

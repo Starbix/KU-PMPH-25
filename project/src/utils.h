@@ -3,7 +3,7 @@
 typedef unsigned int uint32_t;
 
 namespace utils {
-    struct FlashAttentionResult {
+    struct AttentionResult {
         double duration;
         cudaError_t cudaError;
     };

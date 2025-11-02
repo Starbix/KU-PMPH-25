@@ -9,7 +9,7 @@ cudaError_t launch_attention_kernels(
 );
 
 template<class ElTp, int T>
-utils::FlashAttentionResult compute(
+utils::AttentionResult compute(
     ElTp* Q_ptr, ElTp* K_ptr, ElTp* V_ptr,
     uint32_t seq_len, uint32_t head_dim, ElTp* O_ptr
 );
@@ -61,7 +61,7 @@ torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     //     Q_ptr, K_ptr, V_ptr, O_ptr,
     //     seq_len, head_dim
     // );
-    utils::FlashAttentionResult result = compute<float, 32>(Q_ptr, K_ptr, V_ptr, seq_len, head_dim, O_ptr);
+    utils::AttentionResult result = compute<float, 32>(Q_ptr, K_ptr, V_ptr, seq_len, head_dim, O_ptr);
 
     TORCH_CHECK(result.cudaError == cudaSuccess, "CUDA kernel launch failed: ", cudaGetErrorString(result.cudaError));
 
@@ -113,7 +113,7 @@ double forward_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     //     Q_ptr, K_ptr, V_ptr, O_ptr,
     //     seq_len, head_dim
     // );
-    utils::FlashAttentionResult result = compute<float, 32>(Q_ptr, K_ptr, V_ptr, seq_len, head_dim, O_ptr);
+    utils::AttentionResult result = compute<float, 32>(Q_ptr, K_ptr, V_ptr, seq_len, head_dim, O_ptr);
 
     TORCH_CHECK(result.cudaError == cudaSuccess, "CUDA kernel launch failed: ", cudaGetErrorString(result.cudaError));
 

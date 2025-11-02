@@ -45,7 +45,7 @@ __global__ void fill_ones_kernel(float* K, int total_elements) {
 }
 
 template<class ElTp, int T>
-utils::FlashAttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
+utils::AttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
     auto start = std::chrono::high_resolution_clock::now();
 
     dim3 block(T, T, 1);
@@ -59,9 +59,10 @@ utils::FlashAttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint3
     transpose<ElTp, T> <<<grid, block>>>(K, K_tr, N, d);
 
     // 2. Call compute_S(Q, K_tr, N, d, S)
+    dim3 grid_S(dim_N, dim_N, 1);
     ElTp* S;
     cudaMalloc(&S, N * N * sizeof(ElTp));
-    compute_S<ElTp, T> <<<grid, block>>>(Q, K_tr, N, d, S);
+    compute_S<ElTp, T> <<<grid_S, block>>>(Q, K_tr, N, d, S);
 
     // 3. Call compute_P(S, N)
     ElTp* P;
@@ -79,7 +80,7 @@ utils::FlashAttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint3
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration<double, std::milli>(end - start).count();
     // Return any error that occurred
-    return utils::FlashAttentionResult{.duration = duration, .cudaError = cudaGetLastError()};
+    return utils::AttentionResult{.duration = duration, .cudaError = cudaGetLastError()};
 }
 
 // Profiling version with CUDA events
@@ -155,5 +156,5 @@ cudaError_t compute_with_profiling(float* Q, float* K, float* V, uint32_t N, uin
     return cudaGetLastError();
 }
 
-template utils::FlashAttentionResult compute<float, 32>(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);
-template utils::FlashAttentionResult compute<float, 16>(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);
+template utils::AttentionResult compute<float, 32>(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);
+template utils::AttentionResult compute<float, 16>(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);
