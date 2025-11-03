@@ -77,6 +77,7 @@ utils::AttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d
     cudaFree(K_tr);
     cudaFree(S);
     cudaFree(P);
+    cudaDeviceSynchronize();
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration<double, std::milli>(end - start).count();
     // Return any error that occurred
@@ -86,24 +87,24 @@ utils::AttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d
 // Profiling version with CUDA events
 cudaError_t compute_with_profiling(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O) {
     const uint32_t T = 16;
-    
+
     // Create CUDA events for timing
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     float milliseconds = 0;
-    
+
     // Different grid configurations for different operations
     dim3 block(T, T, 1);
-    
+
     // 1. Transpose K (N×d → d×N)
     int dim_N = ceil(((float)N)/T);
     int dim_d = ceil(((float)d)/T);
     dim3 grid(dim_d, dim_N, 1);
-    
+
     float* K_tr;
     cudaMalloc(&K_tr, N * d * sizeof(float));
-    
+
     cudaEventRecord(start);
     transpose<float, T> <<<grid, block>>>(K, K_tr, N, d);
     cudaEventRecord(stop);
@@ -113,10 +114,10 @@ cudaError_t compute_with_profiling(float* Q, float* K, float* V, uint32_t N, uin
 
     // 2. Compute S = Q * K^T (N×N result)
     dim3 grid_S(dim_N, dim_N, 1);
-    
+
     float* S;
     cudaMalloc(&S, N * N * sizeof(float));
-    
+
     cudaEventRecord(start);
     compute_S<float, T> <<<grid_S, block>>>(Q, K_tr, N, d, S);
     cudaEventRecord(stop);
@@ -129,7 +130,7 @@ cudaError_t compute_with_profiling(float* Q, float* K, float* V, uint32_t N, uin
     cudaMalloc(&P, N * N * sizeof(float));
     int threads_per_block = 256;
     int num_blocks = (N + threads_per_block - 1) / threads_per_block;
-    
+
     cudaEventRecord(start);
     compute_P_online<float> <<<num_blocks, threads_per_block>>>(S, P, N);
     cudaEventRecord(stop);

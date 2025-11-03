@@ -10,6 +10,8 @@ from torch.autograd import profiler
 import argparse
 import parameter_optimization as opt
 
+os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
+
 
 def main():
     parser = argparse.ArgumentParser(description="A simple greeting program.")
