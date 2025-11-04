@@ -14,7 +14,7 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
 
 
 def main():
-    parser = argparse.ArgumentParser(description="A simple greeting program.")
+    parser = argparse.ArgumentParser(description="Benchmarking")
     parser.add_argument(
         "--seq_len", type=int, help=f"Sequence length (default {128})", default=128
     )
