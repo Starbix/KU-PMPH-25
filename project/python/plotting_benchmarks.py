@@ -82,7 +82,7 @@ def main():
         linestyle='-',
         color='g'
     )
-    plt.xlabel("N")
+    plt.xlabel(r"$N$")
     plt.ylabel("Runtime (ms)")
     plt.ylabel("Runtime (ms)")
 
