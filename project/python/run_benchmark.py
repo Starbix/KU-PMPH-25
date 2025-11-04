@@ -29,6 +29,7 @@ def load_attention_modules():
     )
 
     print("Loading flash_attention module...")
+    print("(this can take a while), compiling...")
     flash_attention = load(
         name="flash_attention",
         sources=[
@@ -97,9 +98,13 @@ def benchmark_implementation(
     print(f"Benchmarking {name}...")
 
     # Warmup runs
-    for _ in range(warmup_runs):
-        _ = impl_func(Q, K, V)
-        torch.cuda.synchronize()
+    try:
+        for _ in range(warmup_runs):
+            _ = impl_func(Q, K, V)
+            torch.cuda.synchronize()
+    except torch.cuda.OutOfMemoryError as e:
+        print(f"  CUDA out of memory during warmup: {e}")
+        return -1, []
 
     torch.cuda.synchronize()
 
@@ -115,8 +120,12 @@ def benchmark_implementation(
             profile_memory=False,
             with_stack=False,
         ) as prof:
-            output = impl_func(Q, K, V)
-            torch.cuda.synchronize()
+            try:
+                output = impl_func(Q, K, V)
+                torch.cuda.synchronize()
+            except torch.cuda.OutOfMemoryError as e:
+                print(f"  CUDA out of memory during run {run}: {e}")
+                return -1, []
 
         # Print detailed profiling info if enabled
         if VERBOSE_PROFILING:
@@ -188,7 +197,7 @@ def benchmark_implementation(
     print(f"  Average: {avg_time:.3f} ± {std_time:.3f} ms")
     print(f"  Min/Max: {min_time:.3f} / {max_time:.3f} ms")
 
-    return avg_time, times, output
+    return avg_time, times
 
 
 def verify_implementations(attention_mod, flash_attention_mod, Q, K, V, tolerance=1e-4):
@@ -228,8 +237,18 @@ def verify_implementations(attention_mod, flash_attention_mod, Q, K, V, toleranc
 
 
 def plot_results(results, output_path=None):
-    implementations = list(results.keys())
-    avg_times = [results[impl]["avg_time"] for impl in implementations]
+    print(results)
+    # Filter out implementations with -1 (didn't compute anything)
+    valid_results = {
+        impl: data for impl, data in results.items() if data["avg_time"] != -1
+    }
+
+    if not valid_results:
+        print("No valid results to plot (all implementations returned -1)")
+        return
+
+    implementations = list(valid_results.keys())
+    avg_times = [valid_results[impl]["avg_time"] for impl in implementations]
 
     plt.figure(figsize=(10, 6))
 
@@ -252,7 +271,7 @@ def plot_results(results, output_path=None):
 
     # Box plot showing distribution
     plt.subplot(1, 2, 2)
-    times_data = [results[impl]["times"] for impl in implementations]
+    times_data = [valid_results[impl]["times"] for impl in implementations]
     plt.boxplot(times_data, tick_labels=implementations)
     plt.ylabel("Time (ms)")
     plt.title("Timing Distribution")
@@ -285,7 +304,7 @@ def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
         Q, K, V = create_test_tensors(seq_len, args.head_dim)
 
         # Benchmark each implementation
-        torch_time, _, _ = benchmark_implementation(
+        torch_time, _ = benchmark_implementation(
             torch_reference_attention,
             Q,
             K,
@@ -293,17 +312,23 @@ def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
             args.num_runs,
             name="PyTorch Reference",
         )
-        attention_time, _, _ = benchmark_implementation(
-            attention_mod.forward,
-            Q,
-            K,
-            V,
-            args.num_runs,
-            name="Standard Attention",
-        )
+
+        # Skip standard attention if PyTorch reference failed due to OOM
+        if torch_time == -1:
+            attention_time = -1
+            print("  Skipping Standard Attention due to PyTorch Reference OOM")
+        else:
+            attention_time, _ = benchmark_implementation(
+                attention_mod.forward,
+                Q,
+                K,
+                V,
+                args.num_runs,
+                name="Standard Attention",
+            )
 
         if not DISABLE_FLASH_ATTENTION:
-            flash_time, _, _ = benchmark_implementation(
+            flash_time, _ = benchmark_implementation(
                 flash_attention_mod.forward,
                 Q,
                 K,
@@ -318,12 +343,47 @@ def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
         results["attention_times"].append(attention_time)
         results["flash_times"].append(flash_time)
 
-    # Plot sequence length sweep results
+    # Filter out -1 values for each dataset
+    torch_valid = [
+        (s, t) for s, t in zip(seq_lengths, results["torch_times"]) if t != -1
+    ]
+    attention_valid = [
+        (s, t) for s, t in zip(seq_lengths, results["attention_times"]) if t != -1
+    ]
+    flash_valid = (
+        [(s, t) for s, t in zip(seq_lengths, results["flash_times"]) if t != -1]
+        if not DISABLE_FLASH_ATTENTION
+        else []
+    )
+
+    # Unzip for plotting
+    torch_seq, torch_times = zip(*torch_valid) if torch_valid else ([], [])
+    attention_seq, attention_times = (
+        zip(*attention_valid) if attention_valid else ([], [])
+    )
+    flash_seq, flash_times = zip(*flash_valid) if flash_valid else ([], [])
+
     plt.figure(figsize=(10, 6))
-    plt.plot(seq_lengths, results["torch_times"], "o-", label="PyTorch Reference")
-    plt.plot(seq_lengths, results["attention_times"], "s-", label="Standard Attention")
+    plt.plot(torch_seq, torch_times, "o-", label="PyTorch Reference")
+    plt.plot(attention_seq, attention_times, "s-", label="Standard Attention")
     if not DISABLE_FLASH_ATTENTION:
-        plt.plot(seq_lengths, results["flash_times"], "^-", label="Flash Attention")
+        plt.plot(flash_seq, flash_times, "^-", label="Flash Attention")
+
+    # Add OOM lines
+    for name, times, color in [
+        ("PyTorch", results["torch_times"], "r"),
+        ("Standard Attention", results["attention_times"], "g"),
+        ("Flash Attention", results["flash_times"], "b"),
+    ]:
+        oom = next((i for i, t in enumerate(times) if t == -1), None)
+        if oom is not None:
+            plt.axvline(
+                x=seq_lengths[oom],
+                color=color,
+                linestyle="--",
+                label=f"First {name} OOM",
+            )
+
     plt.xlabel("Sequence Length")
     plt.ylabel("Average Time (ms)")
     plt.title("Attention Performance vs Sequence Length")
@@ -342,7 +402,7 @@ def run_hyperparameter_search(flash_attention_mod, args):
     """Search for optimal hyperparameters for flash attention across different configurations."""
 
     # Sequence lengths to test: 2^6 to 2^14
-    seq_lengths = [2**i for i in range(6, 12)]
+    seq_lengths = [2**i for i in range(6, 15)]
     head_dims = [64, 128]
 
     # Hyperparameter search space
@@ -384,8 +444,11 @@ def run_hyperparameter_search(flash_attention_mod, args):
 
                     for bdim_x in thread_dims:
                         for bdim_y in thread_dims:
+                            # blocks can't have more threads than 1024
+                            if bdim_x * bdim_y > 1024:
+                                continue
                             params_str = f"B_c={B_c:3d}, B_r={B_r:3d}, bdim_x={bdim_x:2d}, bdim_y={bdim_y:2d}"
-
+                            print(f"Testing {params_str}", flush=True)
                             try:
                                 # Warmup run
                                 _ = flash_attention_mod.forward_with_parameters(
@@ -397,7 +460,7 @@ def run_hyperparameter_search(flash_attention_mod, args):
                                 times = []
                                 num_runs = 5  # Fewer runs for hyperparameter search
 
-                                for run in range(num_runs):
+                                for _ in range(num_runs):
                                     with torch.profiler.profile(
                                         activities=[
                                             torch.profiler.ProfilerActivity.CPU,
@@ -581,7 +644,6 @@ def main():
     print("Python Attention Benchmark")
     print("=" * 30)
     print(f"CUDA Device: {torch.cuda.get_device_name()}")
-    print(f"PyTorch Version: {torch.__version__}")
     print()
 
     try:
@@ -629,15 +691,21 @@ def main():
             "times": torch_times,
         }
 
-        attention_time, attention_times, _ = benchmark_implementation(
-            attention_mod.forward,
-            Q,
-            K,
-            V,
-            args.num_runs,
-            name="Standard Attention",
-            is_custom_kernel=True,
-        )
+        # Skip standard attention if PyTorch reference failed due to OOM
+        if torch_time == -1:
+            attention_time = -1
+            attention_times = []
+            print("  Skipping Standard Attention due to PyTorch Reference OOM")
+        else:
+            attention_time, attention_times = benchmark_implementation(
+                attention_mod.forward,
+                Q,
+                K,
+                V,
+                args.num_runs,
+                name="Standard Attention",
+                is_custom_kernel=True,
+            )
         results["Standard Attention"] = {
             "avg_time": attention_time,
             "times": attention_times,
@@ -655,7 +723,6 @@ def main():
             )
             results["Flash Attention"] = {"avg_time": flash_time, "times": flash_times}
 
-        # Print summary
         print(f"\n{'=' * 50}")
         print("BENCHMARK SUMMARY")
         print(f"{'=' * 50}")
