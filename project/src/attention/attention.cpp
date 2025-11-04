@@ -48,7 +48,7 @@ torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
     V = V.contiguous();
 
     // Create output tensor with same shape as Q
-    torch::Tensor O = torch::zeros_like(Q);
+    torch::Tensor O = torch::empty_like(Q);
 
     // Get raw pointers
     float* Q_ptr = Q.data_ptr<float>();
@@ -128,7 +128,7 @@ double forward_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("forward", &attention::forward, "Standard attention forward pass");
     m.def(
-        "forward_duration", 
+        "forward_duration",
         (double(*)(torch::Tensor, torch::Tensor, torch::Tensor))
             &attention::forward_duration,
         "Flash attention forward pass duration for optimization"

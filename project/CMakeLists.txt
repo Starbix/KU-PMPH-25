@@ -100,6 +100,7 @@ target_link_libraries(attention_core PUBLIC ${TORCH_LIBRARIES} CUDA::cudart)
 set(FLASH_SOURCES
     src/flash_attention/flash_attention.cpp
     src/flash_attention/flash_attention_kernel.cu
+    src/flash_attention/flash_attention_tiled.cu
 )
 
 add_library(flash_attention_core STATIC ${FLASH_SOURCES})

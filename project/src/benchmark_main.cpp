@@ -1,12 +1,20 @@
 #include <iostream>
 #include <vector>
-#include <chrono>
+#include <sys/time.h>
 #include <iomanip>
 #include <string>
 #include <cstring>
 #include <torch/torch.h>
 #include <cuda_runtime.h>
 
+inline double getTimeStamp() {
+    struct timeval tv;
+    gettimeofday( &tv, NULL );
+    return (double) tv.tv_usec/1000000 + tv.tv_sec;
+}
+
+#define ENABLE_STD_ATTENTION 0
+#define ENABLE_FLASH_ATTENTION 0
 
 int gpuAssert(cudaError_t code) {
   if(code != cudaSuccess) {
@@ -26,7 +34,6 @@ struct BenchmarkConfig {
     int num_runs = 10;
     bool verify = true; // verify by default
     bool verbose = false;
-    bool profile_kernels = false;
 };
 
 void print_usage(const char* program_name) {
@@ -37,7 +44,6 @@ void print_usage(const char* program_name) {
     std::cout << "  --num_runs N       Number of benchmark runs (default: 10)\n";
     std::cout << "  --verify           Verify correctness between implementations\n";
     std::cout << "  --verbose          Print detailed timing information\n";
-    std::cout << "  --profile          Enable kernel-level profiling\n";
     std::cout << "  --help             Show this help message\n";
 }
 
@@ -59,8 +65,6 @@ bool parse_args(int argc, char** argv, BenchmarkConfig& config) {
             config.verify = true;
         } else if (arg == "--verbose") {
             config.verbose = true;
-        } else if (arg == "--profile") {
-            config.profile_kernels = true;
         } else {
             std::cerr << "Unknown argument: " << arg << std::endl;
             print_usage(argv[0]);
@@ -86,73 +90,30 @@ torch::Tensor create_random_tensor(int seq_len, int head_dim) {
     return torch::randn({seq_len, head_dim}, options);
 }
 
-// Forward declaration for profiling version
-cudaError_t compute_with_profiling(float* Q, float* K, float* V, uint32_t N, uint32_t d, float* O);
-
 double benchmark_implementation(
-    torch::Tensor (*impl)(torch::Tensor, torch::Tensor, torch::Tensor),
+    double (*duration_impl)(torch::Tensor, torch::Tensor, torch::Tensor),
     torch::Tensor Q, torch::Tensor K, torch::Tensor V,
-    int num_runs, const std::string& name, bool verbose, bool profile_kernels = false
+    int num_runs, const std::string& name, bool verbose
 ) {
     // Warmup
-    auto warmup_result = impl(Q, K, V);
+    double warmup = duration_impl(Q, K, V);
     torch::cuda::synchronize();
 
-    std::vector<double> times;
-    times.reserve(num_runs);
+    double total_time = 0.0;
 
     for (int run = 0; run < num_runs; run++) {
-        if (profile_kernels && run == 0 && name == "Attention") {
-            // Special profiling run for standard attention
-            std::cout << "\n  Kernel profiling for " << name << ":" << std::endl;
-
-            auto Q_cont = Q.contiguous();
-            auto K_cont = K.contiguous();
-            auto V_cont = V.contiguous();
-            auto O = torch::zeros_like(Q);
-
-            auto start = std::chrono::high_resolution_clock::now();
-
-            cudaError_t err = compute_with_profiling(
-                Q_cont.data_ptr<float>(),
-                K_cont.data_ptr<float>(),
-                V_cont.data_ptr<float>(),
-                Q.size(0), Q.size(1),
-                O.data_ptr<float>()
-            );
-
-            torch::cuda::synchronize();
-            auto end = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration<double, std::milli>(end - start).count();
-            times.push_back(duration);
-
-            if (err != cudaSuccess) {
-                std::cerr << "CUDA Error in profiling: " << cudaGetErrorString(err) << std::endl;
-            }
-        } else {
-            auto start = std::chrono::high_resolution_clock::now();
-
-            auto result = impl(Q, K, V);
-            torch::cuda::synchronize();
-
-            auto end = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration<double, std::milli>(end - start).count();
-            times.push_back(duration);
-        }
-
-        if (verbose) {
-            std::cout << name << " run " << std::setw(2) << run
-                     << ": " << std::fixed << std::setprecision(3)
-                     << times.back() << " ms" << std::endl;
-        }
+        double duration = duration_impl(Q, K, V);
+        total_time += duration;
     }
 
-    // Calculate average
-    double total = 0.0;
-    for (double time : times) {
-        total += time;
+    double avg_time = total_time / num_runs;
+
+    if (verbose) {
+        std::cout << name << " total time: " << std::fixed << std::setprecision(3)
+                 << total_time << " ms, avg: " << avg_time << " ms" << std::endl;
     }
-    return total / num_runs;
+
+    return avg_time;
 }
 
 torch::Tensor torch_reference_attention(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
@@ -162,6 +123,22 @@ torch::Tensor torch_reference_attention(torch::Tensor Q, torch::Tensor K, torch:
     auto probs = torch::softmax(scores, -1);
     auto output = torch::matmul(probs, V);
     return output;
+}
+
+double torch_reference_attention_duration(torch::Tensor Q, torch::Tensor K, torch::Tensor V) {
+    double start, end;
+
+    cudaDeviceSynchronize();
+    start = getTimeStamp();
+
+    auto scores = torch::matmul(Q, K.t());
+    auto probs = torch::softmax(scores, -1);
+    auto output = torch::matmul(probs, V);
+
+    cudaDeviceSynchronize();
+    end = getTimeStamp();
+
+    return (end - start) * 1000.0; // convert to milliseconds
 }
 
 bool verify_correctness(torch::Tensor output1, torch::Tensor output2, const std::string& name1, const std::string& name2) {
@@ -205,7 +182,6 @@ int main(int argc, char** argv) {
     std::cout << "  Head Dimension: " << config.head_dim << std::endl;
     std::cout << "  Number of Runs: " << config.num_runs << std::endl;
     std::cout << "  Verification: " << (config.verify ? "enabled" : "disabled") << std::endl;
-    std::cout << "  Kernel Profiling: " << (config.profile_kernels ? "enabled" : "disabled") << std::endl;
     std::cout << std::endl;
 
     // Create input tensors
@@ -220,41 +196,68 @@ int main(int argc, char** argv) {
     // Benchmark PyTorch reference
     std::cout << "Benchmarking PyTorch reference..." << std::endl;
     double avg_time_torch = benchmark_implementation(
-        torch_reference_attention, Q, K, V, config.num_runs, "PyTorch", config.verbose, false
+        torch_reference_attention_duration, Q, K, V, config.num_runs, "PyTorch", config.verbose
     );
 
     std::cout << std::endl;
 
+    #if ENABLE_STD_ATTENTION
     // Benchmark standard attention
     std::cout << "Benchmarking standard attention..." << std::endl;
     double avg_time_attention = benchmark_implementation(
-        attention::forward, Q, K, V, config.num_runs, "Attention", config.verbose, config.profile_kernels
+        attention::forward_duration, Q, K, V, config.num_runs, "Attention", config.verbose
     );
 
     std::cout << std::endl;
+    #endif
 
-    // Benchmark flash attention
-    std::cout << "Benchmarking flash attention..." << std::endl;
+    #if ENABLE_FLASH_ATTENTION
+    // Benchmark flash attention (regular)
+    std::cout << "Benchmarking flash attention (regular)..." << std::endl;
     double avg_time_flash = benchmark_implementation(
-        flash_attention::forward, Q, K, V, config.num_runs, "Flash", config.verbose, false
+        flash_attention::forward_duration, Q, K, V, config.num_runs, "Flash", config.verbose
     );
 
+    std::cout << std::endl;
+    #endif
     std::cout << std::endl;
 
     // Print results
     std::cout << "Results:" << std::endl;
     std::cout << "--------" << std::endl;
-    std::cout << "PyTorch Reference:  " << std::fixed << std::setprecision(3)
+    std::cout << "PyTorch Reference:       " << std::fixed << std::setprecision(3)
               << avg_time_torch << " ms (avg)" << std::endl;
-    std::cout << "Standard Attention: " << std::fixed << std::setprecision(3)
+    #if ENABLE_STD_ATTENTION
+    std::cout << "Standard Attention:      " << std::fixed << std::setprecision(3)
               << avg_time_attention << " ms (avg)" << std::endl;
-    std::cout << "Flash Attention:    " << std::fixed << std::setprecision(3)
+    #endif
+    #if ENABLE_FLASH_ATTENTION
+    std::cout << "Flash Attention:         " << std::fixed << std::setprecision(3)
               << avg_time_flash << " ms (avg)" << std::endl;
+    #endif
+    std::cout << "Flash Attention (Tiled): " << std::fixed << std::setprecision(3)
+              << avg_time_flash_tiled << " ms (avg)" << std::endl;
 
-    if (avg_time_attention > 0 && avg_time_flash > 0) {
-        double speedup = avg_time_attention / avg_time_flash;
-        std::cout << "Speedup (Flash/Std): " << std::fixed << std::setprecision(2)
+    #if ENABLE_STD_ATTENTION
+    if (avg_time_torch > 0 && avg_time_attention > 0) {
+        double speedup_std = avg_time_torch / avg_time_attention;
+        std::cout << "Speedup (Std/PyTorch): " << std::fixed << std::setprecision(2)
+                  << speedup_std << "x" << std::endl;
+    }
+    #endif
+
+    #if ENABLE_FLASH_ATTENTION
+    if (avg_time_torch > 0 && avg_time_flash > 0) {
+        double speedup = avg_time_torch / avg_time_flash;
+        std::cout << "Speedup (Flash/PyTorch): " << std::fixed << std::setprecision(2)
                   << speedup << "x" << std::endl;
+    }
+    #endif
+
+    if (avg_time_torch > 0 && avg_time_flash_tiled > 0) {
+        double speedup_tiled = avg_time_torch / avg_time_flash_tiled;
+        std::cout << "Speedup (Flash-Tiled/PyTorch): " << std::fixed << std::setprecision(2)
+                  << speedup_tiled << "x" << std::endl;
     }
 
     std::cout << std::endl;
@@ -264,12 +267,27 @@ int main(int argc, char** argv) {
         std::cout << "Running verification..." << std::endl;
 
         auto output_torch = torch_reference_attention(Q, K, V);
+        #if ENABLE_STD_ATTENTION
         auto output_attention = attention::forward(Q, K, V);
+        #endif
+        #if ENABLE_FLASH_ATTENTION
         auto output_flash = flash_attention::forward(Q, K, V);
+        #endif
+        auto output_flash_tiled = flash_attention::forward_tiled(Q, K, V);
 
+        #if ENABLE_STD_ATTENTION
         verify_correctness(output_attention, output_torch, "Standard Attention", "PyTorch Reference");
+        #endif
+        #if ENABLE_FLASH_ATTENTION
         verify_correctness(output_flash, output_torch, "Flash Attention", "PyTorch Reference");
+        #if ENABLE_STD_ATTENTION
         verify_correctness(output_flash, output_attention, "Flash Attention", "Standard Attention");
+        #endif
+        #endif
+        verify_correctness(output_flash_tiled, output_torch, "Flash Attention (Tiled)", "PyTorch Reference");
+        #if ENABLE_STD_ATTENTION
+        verify_correctness(output_flash_tiled, output_attention, "Flash Attention (Tiled)", "Standard Attention");
+        #endif
         std::cout << std::endl;
     }
 
