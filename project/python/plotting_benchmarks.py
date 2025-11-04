@@ -6,7 +6,7 @@ import torch
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmarking")
+    parser = argparse.ArgumentParser(description="Plotting benchmarks")
     parser.add_argument(
         "--head_dim", type=int, help=f"Head dimension (default {64})", default=64
     )

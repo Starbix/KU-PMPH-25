@@ -7,7 +7,7 @@ import plotting_benchmarks
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmarking")
+    parser = argparse.ArgumentParser(description="Plotting out of memory")
     parser.add_argument(
         "--head_dim", type=int, help=f"Head dimension (default {64})", default=64
     )

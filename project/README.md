@@ -4,22 +4,36 @@
 
 This project implements standard Attention and FlashAttention in CUDA, with Python bindings for benchmarking and comparison.
 
-## Project Structure
+To run our benchmarking scripts you first have to set up a Python environment, then you can run the different python files within the `python` folder.
 
+## Setting up the virtual environment
+
+1. **Load modules.** Run the following in the root of the project:
+```bash
+module load cuda/12.8 python/3.12.8 gcc/13.2.0 ninja/1.8.2
 ```
-project/
+
+2. **Load Python requirements.** Run the following in the root of the project:
+```bash
+pip3 install -r requirements.txt
 ```
 
-## Prerequisites
+## Running the Python scripts:
 
-- CUDA (12.8)
-- CMake (4.0)
-- Python (3.12)
+You have to be in the root of the project folder to run the python scripts. The following is an example:
 
-## Setting Up the Virtual Environment
+```bash
+python python/plotting_benchmarks.py 
+```
 
 
-###
+## Building the attention modules
+
+If you want to, you can build our C++ and Cuda code that implements the attention algorithms. However, this is not necessary to test our code or run our benchmarking - the Python scripts described above both benchmarks and validates implementations.
+
+To build the attention modules do the following. 
+
+1. **Set up the environment:** Run the following in the root of the project directory:
 ```bash
 # on hendrix, load modules
 module load cuda/12.8 cmake/4.0.3 python/3.12.8 gcc/13.2.0 ninja/1.8.2
@@ -29,18 +43,10 @@ chmod +x setup_env.sh
 # Run the setup script
 ./setup_env.sh
 ```
-
+2. **Activate the environment.**
 After setting up, activate the virtual environment: `source venv/bin/activate`
 
-Install the required Python dependencies:
-
-```bash
-pip3 install -r requirements.txt
-```
-
-## Building the Project
-
-### Build Instructions
+3. **Build the project.** Build the Cuda and C++ files by running the following in the root of the project directory:
 
 ```bash
 # Make sure you're in the project root directory
@@ -49,56 +55,76 @@ cmake ..
 make -j$(nproc)
 ```
 
-This will compile the CUDA code and create the Python bindings.
 
-Running the benchmarks:
-```bash
-# From the project root directory, using C++ executable directly
-./build/benchmark --num_heads 8 --head_dim 64 --verify
 
-# Or using the Python script for visualization (recommended for plots)
-python3 python/run_benchmark.py --num_heads 8 --verify --output benchmark_results.png
+## Python Script Options
+
+The following are descriptions of the options you can pass to our Python scripts.
+
+### Benchmarks.py
+```
+usage: benchmark.py [-h] [--seq_len SEQ_LEN] [--head_dim HEAD_DIM] [--Bc BC] [--Br BR] [--bdimx BDIMX] [--bdimy BDIMY]
+
+Benchmarking
+
+options:
+  -h, --help           show this help message and exit
+  --seq_len SEQ_LEN    Sequence length (default 128)
+  --head_dim HEAD_DIM  Head dimension (default 64)
+  --Bc BC              B_c (default 32)
+  --Br BR              B_r (default 16)
+  --bdimx BDIMX        bdim_x (default 32)
+  --bdimy BDIMY        bdim_y (default 16)
+
 ```
 
-### Benchmarking Options
+### Plotting_benchmarks.py
 
-#### C++ Benchmark Executable
 ```
-Usage: benchmark [options]
-Options:
-  --num_heads <num>         Number of attention heads (default: 8)
-  --head_dim <dim>          Dimension of each attention head (default: 64)
-  --num_runs <runs>         Number of runs for each benchmark (default: 10)
-  --seq_lengths <list>      Comma-separated list of sequence lengths (default: 128,256,512,1024,2048,4096,8192)
-  --test_kernel_only        Only test the fill_ones kernel with a small matrix
-  --output <file>           Output file path for benchmark results (default: stdout)
-  --csv                     Output results in CSV format
-  --verify                  Verify correctness between implementations
-  --help                    Display this help message and exit
-```
+usage: plotting_benchmarks.py [-h] [--head_dim HEAD_DIM] [--seq_lens SEQ_LENS [SEQ_LENS ...]] [--Bc BC] [--Br BR] [--bdimx BDIMX] [--bdimy BDIMY] [--file_path FILE_PATH]
 
-#### Python Visualization Script
-```
-usage: run_benchmark.py [-h] [--bin_dir BIN_DIR] [--num_heads NUM_HEADS]
-                        [--head_dim HEAD_DIM] [--num_runs NUM_RUNS] [--seq_lengths SEQ_LENGTHS]
-                        [--test_kernel_only] [--verify] [--output OUTPUT]
+Plotting benchmarks
 
-Run attention benchmarks
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --bin_dir BIN_DIR     Directory containing the benchmark executable
-  --num_heads NUM_HEADS
-                        Number of attention heads
-  --head_dim HEAD_DIM   Dimension of each attention head
-  --num_runs NUM_RUNS   Number of runs for each benchmark
-  --seq_lengths SEQ_LENGTHS
-                        Comma-separated list of sequence lengths to benchmark
-  --test_kernel_only    Only test the fill_ones kernel with a small matrix
-  --verify              Verify correctness between implementations
-  --output OUTPUT       Output path for the benchmark plot
+options:
+  -h, --help                         show this help message and exit
+  --head_dim HEAD_DIM                Head dimension (default 64)
+  --seq_lens SEQ_LENS [SEQ_LENS ...] The list of seq. lengths to plot runtime against
+  --Bc BC                            B_c (default 32)
+  --Br BR                            B_r (default 16)
+  --bdimx BDIMX                      bdim_x (default 32)
+  --bdimy BDIMY                      bdim_y (default 16)
+  --file_path FILE_PATH              The filepath of the resulting plot
 ```
 
-## Implementation Details
+### Plotting_out_of_memory.py
+```
+usage: plotting_out_of_memory.py [-h] [--head_dim HEAD_DIM] [--seq_lens SEQ_LENS [SEQ_LENS ...]] [--Bc BC] [--Br BR] [--bdimx BDIMX] [--bdimy BDIMY] [--file_path FILE_PATH]
 
-TODO
+Plotting out of memory
+
+options:
+  -h, --help                         show this help message and exit
+  --head_dim HEAD_DIM                Head dimension (default 64)
+  --seq_lens SEQ_LENS [SEQ_LENS ...] The list of seq. lengths to plot runtime against
+  --Bc BC                            B_c (default 32)
+  --Br BR                            B_r (default 16)
+  --bdimx BDIMX                      bdim_x (default 32)
+  --bdimy BDIMY                      bdim_y (default 16)
+  --file_path FILE_PATH              The filepath of the resulting plot
+```
+
+### Parameter_optimization.py
+```
+usage: parameter_optimization.py [-h] [--seq_len SEQ_LEN [SEQ_LEN ...]] [--head_dim HEAD_DIM] [--with_standard] [--no_pytorch]
+
+Parameter optimization
+
+options:
+  -h, --help                      show this help message and exit
+  --seq_len SEQ_LEN [SEQ_LEN ...] Sequence length(s) (default [1024, 4096, 16384])
+  --head_dim HEAD_DIM             Head dimension (default 64)
+  --with_standard                 Whether or not optimization should be done with comparison of standard attention.
+  --no_pytorch                    Disable comparison with PyTorch's matmul-based  attention implementation.
+```
+
+
