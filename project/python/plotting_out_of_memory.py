@@ -3,6 +3,7 @@ import numpy as np
 import argparse
 import parameter_optimization as opt
 import torch
+import plotting_benchmarks
 
 
 def main():
@@ -15,7 +16,7 @@ def main():
         type=int,
         nargs='+',  # Accept multiple values
         help="The list of seq. lengths to plot runtime against",
-        default=[128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+        default=[128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
     )
     parser.add_argument("--Bc", type=int, help=f"B_c (default {32})", default=32)
     parser.add_argument("--Br", type=int, help=f"B_r (default {16})", default=16)
@@ -30,7 +31,7 @@ def main():
     bdim_x = args.bdimx
     bdim_y = args.bdimy
     seq_lens = args.seq_lens
-    file_path = f"python/plots/runtime_v_seq_len_{head_dim}_{B_c}_{B_r}_{bdim_x}_{bdim_y}.png"
+    file_path = f"python/plots/oom_visualization_{head_dim}_{B_c}_{B_r}_{bdim_x}_{bdim_y}.png"
     if args.file_path:
         file_path = args.file_path
 
@@ -65,21 +66,60 @@ def main():
     ]
 
     print("Plotting")
-    plt.plot(
-        seq_lens, 
-        runtimes_flash, 
-        label="Flash Attention", 
-        marker='s', 
-        linestyle='-'
-    )
-    plt.plot(
-        seq_lens, 
-        runtimes_standard, 
-        label="Standard Attention", 
-        marker='^', 
-        linestyle='-',
-        color='g'
-    )
+
+    if contains_oom_err(runtimes_flash):
+        valid_seq_lens_flash, valid_runtimes_flash, x_oom_err_flash, y_oom_err_flash = find_first_oom_error(seq_lens, runtimes_flash) 
+        plt.plot(
+            valid_seq_lens_flash, 
+            valid_runtimes_flash, 
+            label="Flash Attention", 
+            marker='s', 
+            linestyle='-'
+        )
+        plt.plot(
+            x_oom_err_flash, 
+            y_oom_err_flash, 
+            marker='X', 
+            color="orange", 
+            markersize=12,
+            label="OOM Flash Attention"
+        )
+    else:
+        plt.plot(
+            seq_lens, 
+            runtimes_flash, 
+            label="Flash Attention", 
+            marker='s', 
+            linestyle='-'
+        )
+    if contains_oom_err(runtimes_standard):
+        valid_seq_lens_standard, valid_runtimes_standard, x_oom_err_standard, y_oom_err_standard = find_first_oom_error(seq_lens, runtimes_standard) 
+        plt.plot(
+            valid_seq_lens_standard, 
+            valid_runtimes_standard, 
+            label="Standard Attention", 
+            marker='^', 
+            linestyle='-',
+            color='g'
+        )
+        plt.plot(
+            x_oom_err_standard, 
+            y_oom_err_standard, 
+            marker='X', 
+            color='r', 
+            markersize=12,
+            label="OOM Standard Attention"
+        )
+    else:
+        plt.plot(
+            seq_lens, 
+            runtimes_standard, 
+            label="Standard Attention", 
+            marker='^', 
+            linestyle='-',
+            color='g'
+        )
+
     plt.xlabel(r"$N$")
     plt.ylabel("Runtime (ms)")
     plt.ylabel("Runtime (ms)")
@@ -125,22 +165,39 @@ def main():
 
 def call_flash_attention(seq_len, head_dim, B_c, B_r, bdim_x, bdim_y, flash_func):
     Q, K, V = opt.create_random_test_tensors(seq_len, head_dim)
-    avg_time, std_time, min_time, max_time = opt.benchmark_flash_attention(
-        flash_func,
-        Q, K, V, 
-        B_c, B_r, bdim_x, bdim_y,
-        num_runs=50, warmup_runs=1
-    )
-    return avg_time
+    try:
+        avg_time, std_time, min_time, max_time = opt.benchmark_flash_attention(
+            flash_func,
+            Q, K, V, 
+            B_c, B_r, bdim_x, bdim_y,
+            num_runs=50, warmup_runs=1
+        )
+        return avg_time
+    except Exception:
+        return -1
 
 def call_standard_attention(seq_len, head_dim, standard_func):
     Q, K, V = opt.create_random_test_tensors(seq_len, head_dim)
-    avg_time, std_time, min_time, max_time = opt.benchmark_standard_attention(
-        standard_func,
-        Q, K, V,
-        num_runs=50, warmup_runs=1
-    )
-    return avg_time
+    try:
+        avg_time, std_time, min_time, max_time = opt.benchmark_standard_attention(
+            standard_func,
+            Q, K, V,
+            num_runs=50, warmup_runs=1
+        )
+        return avg_time
+    except Exception:
+        return -1
+
+def find_first_oom_error(seq_lens, runtimes):
+    # Returns 
+    if contains_oom_err(runtimes):
+        idx = runtimes.index(-1)
+        return seq_lens[:idx], runtimes[:idx], seq_lens[idx], runtimes[idx - 1]
+
+
+def contains_oom_err(runtimes):
+    return -1 in runtimes
+
 
 if __name__ == "__main__":
     main()
