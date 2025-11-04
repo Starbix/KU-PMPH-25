@@ -57,14 +57,16 @@ cudaError_t launch_flash_attention_kernels_with_params(
   }
   dim3 gridDim(T_r, 1);
 
+  // K_j, V_j, Q_i, S_ij
   size_t sharedMemSize =
-      (B_c * head_dim + B_c * head_dim + B_r * head_dim + B_r * B_c) *
+      (2*B_c * head_dim + B_r * head_dim + B_r * B_c) *
       sizeof(float);
 
-  // if (sharedMemSize > maxSharedMemPerBlock) {
-  //     printf("Error: Shared memory size %zu exceeds maximum %zu\n",
-  //     sharedMemSize, maxSharedMemPerBlock); return cudaErrorMemoryAllocation;
-  // }
+  if (sharedMemSize > maxSharedMemPerBlock) {
+      printf("Error: Shared memory size %zu exceeds maximum %zu\n",
+      sharedMemSize, maxSharedMemPerBlock);
+      return cudaErrorMemoryAllocation;
+  }
 
   // common configs
 
