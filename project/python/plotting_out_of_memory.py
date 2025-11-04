@@ -84,6 +84,8 @@ def main():
             markersize=12,
             label="OOM Flash Attention"
         )
+        plt.text(x_oom_err_flash - 0.1, y_oom_err_flash - 0.1, fr"$N$ = {x_oom_err_flash}")
+        plt.axvline(x=x_oom_err_flash, color='orange', linestyle='--', linewidth=1)
     else:
         plt.plot(
             seq_lens, 
@@ -110,6 +112,8 @@ def main():
             markersize=12,
             label="OOM Standard Attention"
         )
+        plt.text(x_oom_err_standard - 1.2, y_oom_err_standard - 1.2, fr"$N$ = {x_oom_err_standard}")
+        plt.axvline(x=x_oom_err_standard, color='r', linestyle='--', linewidth=1)
     else:
         plt.plot(
             seq_lens, 
