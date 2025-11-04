@@ -10,6 +10,10 @@ def main():
     parser.add_argument(
         "--head_dim", type=int, help=f"Head dimension (default {64})", default=64
     )
+    parser.add_argument(
+        "--seq_lens", type=list, help=f"The list of seq. lengths to plot runtime against", 
+        default=[128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+    )
     parser.add_argument("--Bc", type=int, help=f"B_c (default {32})", default=32)
     parser.add_argument("--Br", type=int, help=f"B_r (default {16})", default=16)
     parser.add_argument("--bdimx", type=int, help=f"bdim_x (default {32})", default=32)
@@ -22,6 +26,7 @@ def main():
     B_r = args.Br
     bdim_x = args.bdimx
     bdim_y = args.bdimy
+    seq_lens = args.seq_lens
     file_path = f"python/plots/runtime_v_seq_len_{head_dim}_{B_c}_{B_r}_{bdim_x}_{bdim_y}.png"
     if args.file_path:
         file_path = args.file_path
@@ -40,7 +45,6 @@ def main():
     standard_attention_func = attention.forward_duration
 
     print("Running benchmarks")
-    seq_lens = [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
     runtimes_flash = [
         call_flash_attention(
             N, head_dim, 
