@@ -237,7 +237,7 @@ def verify_implementations(attention_mod, flash_attention_mod, Q, K, V, toleranc
 
 
 def plot_results(results, output_path=None):
-    # print(results)
+    print("")
     # Filter out implementations with -1 (didn't compute anything)
     valid_results = {
         impl: data for impl, data in results.items() if data["avg_time"] != -1
