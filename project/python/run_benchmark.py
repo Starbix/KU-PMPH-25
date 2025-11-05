@@ -47,12 +47,10 @@ def load_attention_modules():
 
 def torch_reference_attention(Q, K, V):
     # Q, K, V shape: (seq_len, head_dim)
-    # TODO: Add scaling factor 1/sqrt(head_dim)
     S = torch.matmul(Q, K.transpose(-2, -1)).clone()
-    A = F.softmax(S, dim=-1).clone()
-    output = torch.matmul(A, V)
-
-    return output
+    P = F.softmax(S, dim=-1).clone()
+    O = torch.matmul(P, V)
+    return O
 
 
 def create_test_tensors(seq_len, head_dim, device="cuda", dtype=torch.float32):
