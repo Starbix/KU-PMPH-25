@@ -1,4 +1,4 @@
-#include "../../include/flash_attention.h"
+#include "flash_attention.h"
 #include "../utils.h"
 #include <cuda_runtime.h>
 
