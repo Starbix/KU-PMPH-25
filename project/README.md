@@ -17,14 +17,26 @@ module load cuda/12.8 python/3.12.8 gcc/13.2.0 ninja/1.8.2
 ```bash
 ./setup_env.sh
 ```
+This might take a while. When done you should see a `venv` directory in the root of the project.
+
+3. **Activate the created environment.** Activate the newly created environment by running: 
+```bash
+source venv/bin/activate
+```
+
 
 ## Running the Python scripts:
 
-You have to be in the root of the project folder to run the python scripts. The following is an example:
+You have to be in the root of the project folder to run the python scripts. Run the following to run a basic benchmark example with verification:
 
 ```bash
 python3 python/run_benchmark.py --verify
 ```
+or
+```bash
+python3 python/run_benchmark.py --seq_lengths "64,128,256,512,1024,2048,4096,8192,16384,32768,65536,131072,262144,524288,1048576" --head_dim 128 --num_runs 4 --verify --output out_128.pdf --sweep
+```
+to reproduce the benchmarking results from our report.
 
 
 ## Python Script Options
