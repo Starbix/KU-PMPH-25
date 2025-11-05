@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 import os
 import torch
 import torch.nn.functional as F
@@ -289,59 +290,105 @@ def plot_results(results, output_path=None):
 def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
     """Run benchmarks across different sequence lengths."""
     seq_lengths = [int(x) for x in args.seq_lengths.split(",")]
-    results = {
-        "seq_lengths": seq_lengths,
-        "torch_times": [],
-        "attention_times": [],
-        "flash_times": [],
-    }
 
-    print(f"\nRunning sequence length sweep: {seq_lengths}")
+    # Determine CSV path if output is provided
+    csv_path = None
+    if args.output:
+        csv_path = args.output.replace(".pdf", "_sweep.csv")
 
-    for seq_len in seq_lengths:
-        print(f"\n--- Sequence Length: {seq_len} ---")
+    # Check if CSV already exists and load it
+    if csv_path and os.path.exists(csv_path):
+        print(f"\nLoading existing results from {csv_path}")
+        results = {
+            "seq_lengths": [],
+            "torch_times": [],
+            "attention_times": [],
+            "flash_times": [],
+        }
+        with open(csv_path, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                results["seq_lengths"].append(int(row["seq_length"]))
+                results["torch_times"].append(float(row["torch_time"]))
+                results["attention_times"].append(float(row["attention_time"]))
+                results["flash_times"].append(float(row["flash_time"]))
+        print(f"Loaded {len(results['seq_lengths'])} results from CSV")
+    else:
+        # Run benchmarks
+        results = {
+            "seq_lengths": seq_lengths,
+            "torch_times": [],
+            "attention_times": [],
+            "flash_times": [],
+        }
 
-        Q, K, V = create_test_tensors(seq_len, args.head_dim)
+        print(f"\nRunning sequence length sweep: {seq_lengths}")
 
-        # Benchmark each implementation
-        torch_time, _ = benchmark_implementation(
-            torch_reference_attention,
-            Q,
-            K,
-            V,
-            args.num_runs,
-            name="PyTorch Reference",
-        )
+        for seq_len in seq_lengths:
+            print(f"\n--- Sequence Length: {seq_len} ---")
 
-        # Skip standard attention if PyTorch reference failed due to OOM
-        if torch_time == -1:
-            attention_time = -1
-            print("  Skipping Standard Attention due to PyTorch Reference OOM")
-        else:
-            attention_time, _ = benchmark_implementation(
-                attention_mod.forward,
+            Q, K, V = create_test_tensors(seq_len, args.head_dim)
+
+            # Benchmark each implementation
+            torch_time, _ = benchmark_implementation(
+                torch_reference_attention,
                 Q,
                 K,
                 V,
                 args.num_runs,
-                name="Standard Attention",
+                name="PyTorch Reference",
             )
 
-        if not DISABLE_FLASH_ATTENTION:
-            flash_time, _ = benchmark_implementation(
-                flash_attention_mod.forward,
-                Q,
-                K,
-                V,
-                args.num_runs,
-                name="Flash Attention",
-            )
-        else:
-            flash_time = 0
+            # Skip standard attention if PyTorch reference failed due to OOM
+            if torch_time == -1:
+                attention_time = -1
+                print("  Skipping Standard Attention due to PyTorch Reference OOM")
+            else:
+                attention_time, _ = benchmark_implementation(
+                    attention_mod.forward,
+                    Q,
+                    K,
+                    V,
+                    args.num_runs,
+                    name="Standard Attention",
+                    is_custom_kernel=True,
+                )
 
-        results["torch_times"].append(torch_time)
-        results["attention_times"].append(attention_time)
-        results["flash_times"].append(flash_time)
+            if not DISABLE_FLASH_ATTENTION:
+                flash_time, _ = benchmark_implementation(
+                    flash_attention_mod.forward,
+                    Q,
+                    K,
+                    V,
+                    args.num_runs,
+                    name="Flash Attention",
+                    is_custom_kernel=True,
+                )
+            else:
+                flash_time = 0
+
+            results["torch_times"].append(torch_time)
+            results["attention_times"].append(attention_time)
+            results["flash_times"].append(flash_time)
+
+        # Save results to CSV if output path is provided
+        if csv_path:
+            print(f"\nSaving results to {csv_path}")
+            with open(csv_path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(
+                    ["seq_length", "torch_time", "attention_time", "flash_time"]
+                )
+                for i in range(len(seq_lengths)):
+                    writer.writerow(
+                        [
+                            seq_lengths[i],
+                            results["torch_times"][i],
+                            results["attention_times"][i],
+                            results["flash_times"][i],
+                        ]
+                    )
+            print(f"Results saved to {csv_path}")
 
     # Filter out -1 values for each dataset
     torch_valid = [
@@ -369,29 +416,26 @@ def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
     if not DISABLE_FLASH_ATTENTION:
         plt.plot(flash_seq, flash_times, "^-", label="Flash Attention")
 
-    # Add OOM lines
-    for name, times, color in [
-        ("PyTorch", results["torch_times"], "r"),
-        ("Standard Attention", results["attention_times"], "g"),
-        ("Flash Attention", results["flash_times"], "b"),
-    ]:
-        oom = next((i for i, t in enumerate(times) if t == -1), None)
-        if oom is not None:
-            plt.axvline(
-                x=seq_lengths[oom],
-                color=color,
-                linestyle="--",
-                label=f"First {name} OOM",
-            )
+    # Add vertical lines where OOM occurs
+    if torch_valid:
+        plt.axvline(x=torch_seq[-1], color="red", linestyle="--", label="Attention OOM")
+    # if attention_valid:
+    #     plt.axvline(x=attention_seq[-1], color="green", linestyle="--", label="OOM")
+    # if flash_valid:
+    #     plt.axvline(x=flash_seq[-1], color="blue", linestyle="--", label="OOM")
 
     plt.xlabel("Sequence Length")
     plt.ylabel("Average Time (ms)")
     plt.title("Attention Performance vs Sequence Length")
     plt.legend()
     plt.grid(True, alpha=0.3)
+    # x log, 2
+    plt.xscale("log", base=2)
+    plt.yscale("log")
+    # plt.xticks(torch_seq, labels=torch_seq, rotation=45)
 
     if args.output:
-        sweep_path = args.output.replace(".png", "_sweep.png")
+        sweep_path = args.output.replace(".pdf", "_sweep.pdf")
         plt.savefig(sweep_path, dpi=300, bbox_inches="tight")
         print(f"Sequence length sweep plot saved to {sweep_path}")
     else:
