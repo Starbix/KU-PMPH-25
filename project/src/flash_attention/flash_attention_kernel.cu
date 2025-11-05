@@ -11,6 +11,7 @@
 
 #if WARP_LEVEL_REDUCE
 template <typename ElTp>
+// source: https://github.com/karpathy/llm.c/blob/master/llmc/cuda_utils.cuh#L154
 __device__ __forceinline__ ElTp warpReduceMax(ElTp val) {
 // Assuming warp size is 32
 #pragma unroll
@@ -71,7 +72,7 @@ cudaError_t launch_flash_attention_kernels_with_params(
   INSTANTIATE_KERNEL(64, 32, 16, 32, 16)
   INSTANTIATE_KERNEL(128, 32, 16, 32, 16)
 
-  // if you want to try out different parameter configurations, 
+  // if you want to try out different parameter configurations,
   // you should add INSTANTIATE_KERNEL with them here. For example:
   // INSTANTIATE_KERNEL(128, 48, 32, 16, 16)
 
@@ -378,10 +379,10 @@ __global__ void flash_attention(ElTp *Q, ElTp *K, ElTp *V, ElTp *O, int N,
           }
         }
       }
-      
+
       l_i[reg_row] += l_val;
     }
-   
+
     // threads 0..48 now have m_i
     //
     // debug print l_i
