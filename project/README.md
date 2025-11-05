@@ -38,14 +38,14 @@ usage: run_benchmark.py [-h] [--seq_lengths SEQ_LENGTHS] [--head_dim HEAD_DIM] [
 Benchmark attention implementations
 
 options:
-  -h, --help            show this help message and exit
-  --seq_lengths SEQ_LENGTHS
-                        Comma-separated list of sequence lengths (default: 1024)
-  --head_dim HEAD_DIM   Head dimension (default: 64)
-  --num_runs NUM_RUNS   Number of benchmark runs (default: 10)
-  --verify              Verify correctness between implementations
-  --output OUTPUT       Output path for benchmark plot
-  --sweep               Run sequence length sweep instead of single benchmark
-  --hyperparam-search   Run hyperparameter search to find optimal block sizes and thread dimensions
+  -h, --help                 show this help message and exit
+  --seq_lengths SEQ_LENGTHS  Comma-separated list of sequence lengths (default: 1024)
+  --head_dim HEAD_DIM        Head dimension (default: 64)
+  --num_runs NUM_RUNS        Number of benchmark runs (default: 10)
+  --verify                   Verify correctness between implementations
+  --output OUTPUT            Output path for benchmark plot
+  --sweep                    Run sequence length sweep instead of single benchmark
+  --hyperparam-search        Run hyperparameter search to find optimal block sizes and  thread dimensions
 
 ```
+
