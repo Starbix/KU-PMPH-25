@@ -36,7 +36,7 @@ or
 ```bash
 python3 python/run_benchmark.py --seq_lengths "64,128,256,512,1024,2048,4096,8192,16384,32768,65536,131072,262144,524288,1048576" --head_dim 128 --num_runs 4 --verify --output out_128.pdf --sweep
 ```
-to reproduce the benchmarking results from our report.
+to reproduce the benchmarking results from our report (it takes a while to run).
 
 
 ## Python Script Options
