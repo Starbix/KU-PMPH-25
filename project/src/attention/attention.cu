@@ -5,16 +5,6 @@
 #include "../utils.h"
 
 
-// Simple transpose kernel
-__global__ void transpose_kernel(float* input, float* output, int rows, int cols) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (row < rows && col < cols) {
-        output[col * rows + row] = input[row * cols + col];
-    }
-}
-
 // This function was copied from the lecture notes, chapter 6.2
 template<class ElTp, int T>
 __global__ void transpose(ElTp* M, ElTp* M_tr, uint32_t rows, uint32_t cols) {
@@ -30,19 +20,6 @@ __global__ void transpose(ElTp* M, ElTp* M_tr, uint32_t rows, uint32_t cols) {
         M_tr [j*rows + i] = tile [ tidy ][ tidx ];
 }
 
-
-// TODO: remove dummy code
-// CUDA kernel to fill the K matrix with 1s
-__global__ void fill_ones_kernel(float* K, int total_elements) {
-    // Calculate the global thread index
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    // Check if thread is within bounds
-    if (idx < total_elements) {
-        // Set the value to 1.0
-        K[idx] = 1.0f;
-    }
-}
 
 template<class ElTp, int T>
 utils::AttentionResult compute(ElTp* Q, ElTp* K, ElTp* V, uint32_t N, uint32_t d, ElTp* O) {
