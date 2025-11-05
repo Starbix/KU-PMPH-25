@@ -237,7 +237,7 @@ def verify_implementations(attention_mod, flash_attention_mod, Q, K, V, toleranc
 
 
 def plot_results(results, output_path=None):
-    print(results)
+    # print(results)
     # Filter out implementations with -1 (didn't compute anything)
     valid_results = {
         impl: data for impl, data in results.items() if data["avg_time"] != -1
@@ -669,16 +669,12 @@ def main():
 
         # Create test tensors
         Q, K, V = create_test_tensors(seq_len, args.head_dim)
-        print(f"Created test tensors with shape: {Q.shape}")
-
-        # Verification
-        if args.verify:
-            verify_implementations(attention_mod, flash_attention_mod, Q, K, V)
+        print(f"Created test tensors with shape: {Q.shape}\n")
 
         # Benchmark all implementations
         results = {}
 
-        torch_time, torch_times, _ = benchmark_implementation(
+        torch_time, torch_times = benchmark_implementation(
             torch_reference_attention,
             Q,
             K,
@@ -712,7 +708,7 @@ def main():
         }
 
         if not DISABLE_FLASH_ATTENTION:
-            flash_time, flash_times, _ = benchmark_implementation(
+            flash_time, flash_times = benchmark_implementation(
                 flash_attention_mod.forward,
                 Q,
                 K,
@@ -722,6 +718,10 @@ def main():
                 is_custom_kernel=True,
             )
             results["Flash Attention"] = {"avg_time": flash_time, "times": flash_times}
+        
+        # Verification
+        if args.verify:
+            verify_implementations(attention_mod, flash_attention_mod, Q, K, V)
 
         print(f"\n{'=' * 50}")
         print("BENCHMARK SUMMARY")
