@@ -2,11 +2,12 @@
 import argparse
 import csv
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.cpp_extension import load
-import matplotlib.pyplot as plt
-import numpy as np
 
 # compile for Ampere (A100)
 os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
@@ -287,6 +288,179 @@ def plot_results(results, output_path=None):
         print(f"Plot saved to {output_path}")
     else:
         plt.show()
+
+
+PERF_ALL_VALID_ONLY = False
+
+
+def compute_performance_from_csv(csv_path, head_dim, output_path=None):
+    """
+    Read benchmark CSV and compute GFLOP/s for each implementation.
+
+    Args:
+        csv_path: Path to CSV file with columns: seq_length, torch_time, attention_time, flash_time
+        head_dim: Head dimension used in the benchmark
+        output_path: Optional path for PDF plot output
+
+    Returns:
+        None (prints results to console and optionally saves plot)
+    """
+    print(f"\nComputing performance from {csv_path}")
+    print(f"Head dimension: {head_dim}")
+    print(f"{'=' * 80}")
+
+    if not os.path.exists(csv_path):
+        print(f"Error: CSV file not found: {csv_path}")
+        return
+
+    # Read CSV data
+    results = []
+    with open(csv_path, "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            seq_len = int(row["seq_length"])
+            torch_time = float(row["torch_time"])
+            attention_time = float(row["attention_time"])
+            flash_time = float(row["flash_time"])
+
+            # Compute FLOPs for attention: N^2 * (4*D + 3)
+            # - Q @ K^T: 2 * N^2 * D FLOPs
+            # - Softmax: ~3 * N^2 FLOPs (exp, sum, divide)
+            # - P @ V: 2 * N^2 * D FLOPs
+            # Total: 4*N^2*D + 3*N^2 = N^2 * (4*D + 3) FLOPs
+            flops = seq_len * seq_len * (4 * head_dim + 3)
+
+            # Convert to GFLOP/s (time is in ms)
+            # GFLOP/s = (FLOPs / 1e9) / (time_ms / 1000)
+            #         = FLOPs / (time_ms * 1e6)
+            torch_gflops = flops / (torch_time * 1e6) if torch_time > 0 else 0
+            attention_gflops = (
+                flops / (attention_time * 1e6) if attention_time > 0 else 0
+            )
+            flash_gflops = flops / (flash_time * 1e6) if flash_time > 0 else 0
+
+            results.append(
+                {
+                    "seq_len": seq_len,
+                    "torch_gflops": torch_gflops,
+                    "attention_gflops": attention_gflops,
+                    "flash_gflops": flash_gflops,
+                }
+            )
+
+    # Print header
+    print(f"{'Seq Length':<12} {'PyTorch':<15} {'Standard':<15} {'Flash':<15}")
+    print(f"{'':12} {'GFLOP/s':<15} {'GFLOP/s':<15} {'GFLOP/s':<15}")
+    print(f"{'-' * 60}")
+
+    # Print results
+    for r in results:
+        torch_str = f"{r['torch_gflops']:.3f}" if r["torch_gflops"] > 0 else "OOM"
+        attention_str = (
+            f"{r['attention_gflops']:.3f}" if r["attention_gflops"] > 0 else "OOM"
+        )
+        flash_str = f"{r['flash_gflops']:.3f}" if r["flash_gflops"] > 0 else "OOM"
+
+        print(f"{r['seq_len']:<12} {torch_str:<15} {attention_str:<15} {flash_str:<15}")
+
+    print(f"{'=' * 80}")
+
+    # Create plot - optionally filter to only data where all implementations are valid (no OOM)
+    if PERF_ALL_VALID_ONLY:
+        valid_data = [
+            r
+            for r in results
+            if r["torch_gflops"] > 0
+            and r["attention_gflops"] > 0
+            and r["flash_gflops"] > 0
+        ]
+
+        if not valid_data:
+            print(
+                "\nNo data points where all implementations are valid. Skipping plot."
+            )
+            return
+
+        # Extract data for plotting
+        seq_lens = [r["seq_len"] for r in valid_data]
+        torch_gflops = [r["torch_gflops"] for r in valid_data]
+        attention_gflops = [r["attention_gflops"] for r in valid_data]
+        flash_gflops = [r["flash_gflops"] for r in valid_data]
+    else:
+        # Plot all data, filtering per implementation
+        torch_valid = [
+            (r["seq_len"], r["torch_gflops"]) for r in results if r["torch_gflops"] > 0
+        ]
+        attention_valid = [
+            (r["seq_len"], r["attention_gflops"])
+            for r in results
+            if r["attention_gflops"] > 0
+        ]
+        flash_valid = [
+            (r["seq_len"], r["flash_gflops"]) for r in results if r["flash_gflops"] > 0
+        ]
+
+        torch_seq_lens, torch_gflops = zip(*torch_valid) if torch_valid else ([], [])
+        attention_seq_lens, attention_gflops = (
+            zip(*attention_valid) if attention_valid else ([], [])
+        )
+        flash_seq_lens, flash_gflops = zip(*flash_valid) if flash_valid else ([], [])
+
+    plt.figure(figsize=(10, 6))
+    if PERF_ALL_VALID_ONLY:
+        plt.plot(seq_lens, torch_gflops, "o-", label="PyTorch Reference")
+        plt.plot(seq_lens, attention_gflops, "s-", label="Standard Attention")
+        plt.plot(seq_lens, flash_gflops, "^-", label="Flash Attention")
+    else:
+        if torch_seq_lens:
+            plt.plot(torch_seq_lens, torch_gflops, "o-", label="PyTorch Reference")
+        if attention_seq_lens:
+            plt.plot(
+                attention_seq_lens, attention_gflops, "s-", label="Standard Attention"
+            )
+        if flash_seq_lens:
+            plt.plot(flash_seq_lens, flash_gflops, "^-", label="Flash Attention")
+
+    # Add horizontal lines for A100 theoretical peaks
+    a100_fp32_peak = 19500  # GFLOP/s
+    a100_fp16_tensor_peak = 156000  # GFLOP/s (with Tensor Cores)
+
+    plt.axhline(
+        y=a100_fp32_peak,
+        color="r",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"A100 FP32 Peak ({a100_fp32_peak / 1000} TFLOP/s)",
+        alpha=0.7,
+    )
+    # plt.axhline(
+    #     y=a100_fp16_tensor_peak,
+    #     color="purple",
+    #     linestyle="--",
+    #     linewidth=1.5,
+    #     label=f"A100 TF32 Tensor Peak ({a100_fp16_tensor_peak / 1000} TFLOP/s)",
+    #     alpha=0.7,
+    # )
+
+    plt.xlabel("Sequence Length")
+    plt.ylabel("Performance (GFLOP/s)")
+    plt.title(f"Attention Performance (Head Dim = {head_dim})")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.xscale("log", base=2)
+    # plt.yscale("log")
+
+    if output_path:
+        perf_path = output_path.replace(".csv", "_perf.pdf")
+        plt.savefig(perf_path, dpi=300, bbox_inches="tight")
+        print(f"\nPerformance plot saved to {perf_path}")
+    else:
+        # Default output path based on input CSV
+        perf_path = csv_path.replace(".csv", "_perf.pdf")
+        plt.savefig(perf_path, dpi=300, bbox_inches="tight")
+        print(f"\nPerformance plot saved to {perf_path}")
+
+    plt.close()
 
 
 def run_sequence_length_sweep(attention_mod, flash_attention_mod, args):
@@ -683,8 +857,17 @@ def main():
         action="store_true",
         help="Run hyperparameter search to find optimal block sizes and thread dimensions",
     )
+    parser.add_argument(
+        "--perf",
+        type=str,
+        help="Compute GFLOP/s from CSV file (requires --head_dim)",
+    )
 
     args = parser.parse_args()
+
+    if args.perf:
+        compute_performance_from_csv(args.perf, args.head_dim, args.output)
+        return 0
 
     # Check CUDA availability
     if not torch.cuda.is_available():

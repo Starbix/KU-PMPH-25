@@ -69,8 +69,8 @@ cudaError_t launch_flash_attention_kernels_with_params(
       return cudaErrorMemoryAllocation;
   }
   // fastest configs
-  INSTANTIATE_KERNEL(64, 32, 16, 32, 16)
-  INSTANTIATE_KERNEL(128, 32, 16, 32, 16)
+  INSTANTIATE_KERNEL(64, 16, 16, 16, 16)
+  INSTANTIATE_KERNEL(128, 16, 16, 16, 16)
 
   // if you want to try out different parameter configurations,
   // you should add INSTANTIATE_KERNEL with them here. For example:
@@ -96,11 +96,11 @@ cudaError_t launch_flash_attention_kernels(float *Q_ptr, float *K_ptr,
   // like in paper
   // int B_c = std::min(CEIL_DIV(M, 4 * head_dim), seq_len);
   // int B_r = std::min(B_c, head_dim);
-  const int B_c = 32;
+  const int B_c = 16;
   const int B_r = 16;
 
   // static
-  int bdim_x = 32;
+  int bdim_x = 16;
   int bdim_y = 16;
 
   return launch_flash_attention_kernels_with_params(
@@ -218,8 +218,8 @@ __global__ void flash_attention(ElTp *Q, ElTp *K, ElTp *V, ElTp *O, int N,
       if (global_row < N) {
 #pragma unroll
         for (int col = tid_x; col < d; col += bdim_x) {
-          // TODO: handle non-divisible d
-          K_j[row * d + col] = K[global_row * d + col]; // coalesced cuz + tid_x
+          // K_j[row * d + col] = K[global_row * d + col]; // no transpose
+          K_j[col * B_c + row] = K[global_row * d + col]; // transpose on load
           V_j[row * d + col] = V[global_row * d + col];
         }
         // if B_c doesn't divide N, need to zero out extra rows
@@ -261,7 +261,8 @@ __global__ void flash_attention(ElTp *Q, ElTp *K, ElTp *V, ElTp *O, int N,
         for (int t = 0; t < d; t++) {
           S_ij_val +=
               Q_i[row * d + t] *
-              K_j[col * d + t]; // K_j is stored row major but we need K_j^T
+              K_j[t * B_c + col]; // K_j is already transposed
+              // K_j[col * d + t]; // this leads to bank conflicts
         }
         S_ij[row * B_c + col] = S_ij_val;
       }
